@@ -1,0 +1,9 @@
+[package]
+name = "trade_guard_server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+trade_guard_core = { path = "../../crates/trade-guard-core" }
