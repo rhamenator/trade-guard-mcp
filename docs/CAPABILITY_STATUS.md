@@ -16,6 +16,13 @@ No order-entry, authorization, or audit code exists. **Do not build against
 this repository or assume any tool, type, or endpoint described in
 `03-create-trade-guard-mcp.md` currently exists.**
 
+The workspace does carry two pieces of policy ahead of real code, so future
+implementation starts from the right defaults instead of drifting from
+`market-intelligence-mcp`'s: `[workspace.lints]` forbids `unsafe_code` and
+warns on `clippy::all`, and the dependency list is empty (see
+`CHANGELOG.md`) pending the same hand-roll-what's-reasonable policy used
+there.
+
 ## Recommended next milestone
 
 Per `06-implementation-order-and-acceptance.md` Phase 3: build the

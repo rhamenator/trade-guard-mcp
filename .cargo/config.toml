@@ -1,0 +1,6 @@
+# See market-intelligence-mcp's .cargo/config.toml for the rationale:
+# incremental compilation's working directories are prone to sporadic
+# "Access is denied" / LNK1201 failures on this machine (almost certainly
+# antivirus scanning newly written files in target/).
+[build]
+incremental = false

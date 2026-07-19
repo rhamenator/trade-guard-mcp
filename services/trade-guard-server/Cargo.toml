@@ -7,3 +7,6 @@ publish.workspace = true
 
 [dependencies]
 trade_guard_core = { path = "../../crates/trade-guard-core" }
+
+[lints]
+workspace = true

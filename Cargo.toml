@@ -12,8 +12,18 @@ license = "GPL-3.0-or-later"
 publish = false
 
 [workspace.dependencies]
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-uuid = { version = "1", features = ["v4", "serde"] }
-time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
-thiserror = "1"
+# Empty for now: no module in this repository has real logic yet (see
+# docs/CAPABILITY_STATUS.md), so there is nothing to depend on. When real
+# implementation starts, follow market-intelligence-mcp's precedent: keep
+# only `serde`/`serde_json` (JSON is the cross-repo/cross-language wire
+# format and hand-rolling a parser is a worse security trade-off than using
+# the ecosystem-standard, heavily audited crate) and hand-roll everything
+# else that's reasonably hand-rollable (see
+# market_intelligence_core::utc_timestamp for the pattern this repo should
+# copy rather than reaching for the `time`/`uuid`/`thiserror` crates).
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"
