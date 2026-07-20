@@ -18,6 +18,7 @@ use crate::account::AccountSnapshot;
 use crate::audit::{AuditError, AuditRecord, AuditStore};
 use crate::decimal::Decimal;
 use crate::evidence::EvidenceBundle;
+use crate::jurisdiction_venue::{check_venue_profile_availability, VenueRegistry};
 use crate::order::{Fill, Order, OrderState};
 use crate::policy::{check_buying_power, check_evidence_eligibility, validate_trade_intent};
 use crate::policy_decision::{PolicyDecision, PolicyOutcome};
@@ -65,6 +66,7 @@ pub fn authorize_and_submit_paper_order(
     account: &mut AccountSnapshot,
     simulator: &PaperSimulator,
     audit: &AuditStore,
+    venues: &VenueRegistry,
     intent: TradeIntent,
     evidence: Option<&EvidenceBundle>,
     now: UtcTimestamp,
@@ -165,7 +167,10 @@ pub fn authorize_and_submit_paper_order(
         account.reserved_cash = account.reserved_cash.checked_sub(&estimated_notional).unwrap_or(Decimal::ZERO);
     }
 
-    let outcome = PolicyOutcome::allow();
+    let mut outcome = PolicyOutcome::allow();
+    if let Some(warning) = check_venue_profile_availability(&order.instrument, venues, now) {
+        outcome = outcome.with_warning(warning);
+    }
     persist_and_return(audit, &intent, outcome, Some(order), now)
 }
 
@@ -208,6 +213,14 @@ mod tests {
         AccountSnapshot::new("paper-default", "USD", Decimal::from_i64(100_000), UtcTimestamp::UNIX_EPOCH)
     }
 
+    /// None of these tests set `instrument.venue_mic`, so an empty
+    /// registry never produces a warning regardless of content — the
+    /// venue-warning behavior itself is `jurisdiction_venue`'s own test
+    /// module's responsibility, not re-tested here.
+    fn empty_venues() -> VenueRegistry {
+        VenueRegistry::new()
+    }
+
     fn base_intent(idempotency_key: &str) -> TradeIntent {
         TradeIntent {
             schema_version: "2.0.0".into(),
@@ -248,7 +261,7 @@ mod tests {
         let mut sim = PaperSimulator::new();
         sim.set_quote("inst-1", Decimal::from_i64(100));
 
-        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, base_intent("idem-1"), None, UtcTimestamp::UNIX_EPOCH).unwrap();
+        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), base_intent("idem-1"), None, UtcTimestamp::UNIX_EPOCH).unwrap();
 
         assert!(result.policy_outcome.is_allowed());
         assert!(!result.was_duplicate);
@@ -270,12 +283,12 @@ mod tests {
         let mut sim = PaperSimulator::new();
         sim.set_quote("inst-1", Decimal::from_i64(100));
 
-        let first = authorize_and_submit_paper_order(&mut account, &sim, &audit, base_intent("idem-dup"), None, UtcTimestamp::UNIX_EPOCH).unwrap();
+        let first = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), base_intent("idem-dup"), None, UtcTimestamp::UNIX_EPOCH).unwrap();
         assert!(!first.was_duplicate);
         let cash_after_first = account.cash;
         let position_after_first = account.position_for("inst-1").unwrap().quantity;
 
-        let second = authorize_and_submit_paper_order(&mut account, &sim, &audit, base_intent("idem-dup"), None, UtcTimestamp::UNIX_EPOCH).unwrap();
+        let second = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), base_intent("idem-dup"), None, UtcTimestamp::UNIX_EPOCH).unwrap();
         assert!(second.was_duplicate);
         assert_eq!(second.order.unwrap().order_id, first.order.unwrap().order_id);
         // The account was never touched a second time — cash/position
@@ -292,7 +305,7 @@ mod tests {
         let mut sim = PaperSimulator::new();
         sim.set_quote("inst-1", Decimal::from_i64(100));
 
-        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, base_intent("idem-poor"), None, UtcTimestamp::UNIX_EPOCH).unwrap();
+        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), base_intent("idem-poor"), None, UtcTimestamp::UNIX_EPOCH).unwrap();
         assert_eq!(result.policy_outcome.decision, PolicyDecision::BlockedByRisk);
         assert!(account.position_for("inst-1").is_none());
         assert_eq!(account.cash.to_decimal_string(), "10");
@@ -307,7 +320,7 @@ mod tests {
         let mut intent = base_intent("idem-live");
         intent.mode = IntentMode::GuardedLive;
 
-        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, intent, None, UtcTimestamp::UNIX_EPOCH).unwrap();
+        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), intent, None, UtcTimestamp::UNIX_EPOCH).unwrap();
         assert_eq!(result.policy_outcome.decision, PolicyDecision::BlockedByOperatorControl);
         assert!(result.order.is_none());
         assert!(account.position_for("inst-1").is_none());
@@ -322,7 +335,7 @@ mod tests {
         let mut intent = base_intent("idem-observe");
         intent.mode = IntentMode::Observe;
 
-        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, intent, None, UtcTimestamp::UNIX_EPOCH).unwrap();
+        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), intent, None, UtcTimestamp::UNIX_EPOCH).unwrap();
         assert_eq!(result.policy_outcome.decision, PolicyDecision::Reject);
         let _ = std::fs::remove_file(path);
     }
@@ -335,7 +348,7 @@ mod tests {
         let mut intent = base_intent("idem-wrong-acct");
         intent.account_alias = "some-other-account".into();
 
-        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, intent, None, UtcTimestamp::UNIX_EPOCH).unwrap();
+        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), intent, None, UtcTimestamp::UNIX_EPOCH).unwrap();
         assert_eq!(result.policy_outcome.decision, PolicyDecision::Reject);
         let _ = std::fs::remove_file(path);
     }
@@ -350,7 +363,7 @@ mod tests {
         intent.order_type = OrderType::Limit;
         intent.limit_price = Some(Decimal::from_i64(50));
 
-        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, intent, None, UtcTimestamp::UNIX_EPOCH).unwrap();
+        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), intent, None, UtcTimestamp::UNIX_EPOCH).unwrap();
         assert!(result.policy_outcome.is_allowed());
         let order = result.order.unwrap();
         assert_eq!(order.state, OrderState::Acknowledged);
@@ -370,13 +383,54 @@ mod tests {
         let mut intent = base_intent("idem-bad-qty");
         intent.quantity = Decimal::ZERO;
 
-        let first = authorize_and_submit_paper_order(&mut account, &sim, &audit, intent.clone(), None, UtcTimestamp::UNIX_EPOCH).unwrap();
+        let first = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), intent.clone(), None, UtcTimestamp::UNIX_EPOCH).unwrap();
         assert_eq!(first.policy_outcome.decision, PolicyDecision::Reject);
         assert!(!first.was_duplicate);
 
-        let second = authorize_and_submit_paper_order(&mut account, &sim, &audit, intent, None, UtcTimestamp::UNIX_EPOCH).unwrap();
+        let second = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), intent, None, UtcTimestamp::UNIX_EPOCH).unwrap();
         assert!(second.was_duplicate);
         assert_eq!(second.policy_outcome.decision, PolicyDecision::Reject);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn an_unregistered_venue_fills_successfully_with_a_warning_attached() {
+        let (audit, path) = temp_audit();
+        let mut account = base_account();
+        let mut sim = PaperSimulator::new();
+        sim.set_quote("inst-1", Decimal::from_i64(100));
+        let mut intent = base_intent("idem-venue");
+        intent.instrument.venue_mic = Some("NOPE".to_string());
+
+        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), intent, None, UtcTimestamp::UNIX_EPOCH).unwrap();
+
+        assert!(result.policy_outcome.is_allowed(), "an unregistered venue must warn, never block a paper order");
+        assert_eq!(result.order.unwrap().state, OrderState::Filled);
+        assert_eq!(result.policy_outcome.warnings.len(), 1);
+        assert!(result.policy_outcome.warnings[0].contains("NOPE"));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn a_registered_and_effective_venue_fills_with_no_warning() {
+        let (audit, path) = temp_audit();
+        let mut account = base_account();
+        let mut sim = PaperSimulator::new();
+        sim.set_quote("inst-1", Decimal::from_i64(100));
+        let mut intent = base_intent("idem-venue-known");
+        intent.instrument.venue_mic = Some("ARCX".to_string());
+        let venues = crate::jurisdiction_venue::VenueRegistry::with_demo_fixtures();
+        // The demo fixture is only effective from 2026-01-01 onward
+        // (see `VenueRegistry::with_demo_fixtures`), so `now` must be
+        // after that -- UNIX_EPOCH would (correctly) produce a
+        // not-yet-effective warning instead of none, as the *other*
+        // test right below this one already covers on purpose.
+        let now = UtcTimestamp::parse_rfc3339("2026-07-20T00:00:00Z").unwrap();
+
+        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, &venues, intent, None, now).unwrap();
+
+        assert!(result.policy_outcome.is_allowed());
+        assert!(result.policy_outcome.warnings.is_empty());
         let _ = std::fs::remove_file(path);
     }
 }

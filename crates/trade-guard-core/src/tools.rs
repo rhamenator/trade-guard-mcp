@@ -7,6 +7,7 @@
 //! health, capabilities, tool-catalog, self-test
 //! validate-trade-intent, check-evidence-eligibility
 //! get-account-snapshot, get-positions, get-open-orders
+//! get-venue-profile
 //! authorize-and-submit-paper-order
 //! list-recent-decisions, replay-decision, audit-integrity
 //! ```
@@ -46,6 +47,7 @@ pub fn tool_definitions() -> Value {
         {"name": "get-account-snapshot", "description": "The current in-memory paper account: cash, reserved cash, positions.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false}},
         {"name": "get-positions", "description": "Current paper positions only.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false}},
         {"name": "get-open-orders", "description": "Non-terminal orders found in the recent audit window (best-effort; see tool description limitations).", "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer", "default": 50}}, "additionalProperties": false}},
+        {"name": "get-venue-profile", "description": "The registered international venue profile (timezone, currency, settlement, session structure) for a venue MIC, if one is configured.", "inputSchema": {"type": "object", "properties": {"venue_mic": {"type": "string"}}, "required": ["venue_mic"], "additionalProperties": false}},
         {"name": "authorize-and-submit-paper-order", "description": "The atomic authorize-and-submit protocol against the internal paper simulator.", "inputSchema": {"type": "object", "properties": {"intent": {"type": "object"}, "evidence": {"type": ["object", "null"]}}, "required": ["intent"], "additionalProperties": false}},
         {"name": "list-recent-decisions", "description": "Recent audit records, newest first.", "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer", "default": 10}}, "additionalProperties": false}},
         {"name": "replay-decision", "description": "Reads one stored audit record by event ID without mutating any state.", "inputSchema": {"type": "object", "properties": {"event_id": {"type": "string"}}, "required": ["event_id"], "additionalProperties": false}},
@@ -164,11 +166,19 @@ pub fn get_open_orders(state: &GuardState, arguments: &Value) -> Result<String, 
     Ok(pretty(&json!({ "open_orders": open })))
 }
 
+pub fn get_venue_profile(state: &GuardState, arguments: &Value) -> Result<String, String> {
+    let venue_mic = arguments.get("venue_mic").and_then(Value::as_str).ok_or_else(|| "\"venue_mic\" is required".to_string())?;
+    match state.venues.get(venue_mic) {
+        Some(profile) => Ok(pretty(&serde_json::to_value(profile).expect("VenueProfile serialization is infallible"))),
+        None => Err(format!("no venue profile configured for {venue_mic:?}")),
+    }
+}
+
 pub fn authorize_and_submit_paper_order_tool(state: &mut GuardState, arguments: &Value) -> Result<String, String> {
     let intent = parse_intent(arguments)?;
     let evidence = parse_optional_evidence(arguments)?;
     let now = UtcTimestamp::now();
-    let result = authorize_and_submit_paper_order(&mut state.account, &state.simulator, &state.audit, intent, evidence.as_ref(), now)
+    let result = authorize_and_submit_paper_order(&mut state.account, &state.simulator, &state.audit, &state.venues, intent, evidence.as_ref(), now)
         .map_err(|e| e.to_string())?;
 
     let body = json!({
@@ -230,6 +240,7 @@ pub fn call_tool(state: &mut GuardState, name: &str, arguments: &Value) -> Resul
         "get-account-snapshot" => get_account_snapshot(state),
         "get-positions" => get_positions(state),
         "get-open-orders" => get_open_orders(state, arguments),
+        "get-venue-profile" => get_venue_profile(state, arguments),
         "authorize-and-submit-paper-order" => authorize_and_submit_paper_order_tool(state, arguments),
         "list-recent-decisions" => list_recent_decisions(state, arguments),
         "replay-decision" => replay_decision(state, arguments),
@@ -372,6 +383,34 @@ mod tests {
     fn call_tool_returns_an_error_for_an_unknown_tool_name() {
         let (mut state, path) = test_state();
         assert!(call_tool(&mut state, "authorize-and-submit-live-order", &json!({})).is_err());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn get_venue_profile_returns_a_configured_venue() {
+        let (state, path) = test_state();
+        let result = get_venue_profile(&state, &json!({"venue_mic": "ARCX"})).unwrap();
+        assert!(result.contains("America/New_York"));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn get_venue_profile_errors_for_an_unconfigured_venue() {
+        let (state, path) = test_state();
+        assert!(get_venue_profile(&state, &json!({"venue_mic": "NOPE"})).is_err());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn authorize_and_submit_paper_order_tool_attaches_a_venue_warning_but_still_fills() {
+        let (mut state, path) = test_state();
+        let mut intent = valid_intent_json("idem-venue-warn");
+        intent["instrument"]["venue-mic"] = json!("NOPE");
+        let args = json!({"intent": intent});
+        let result = authorize_and_submit_paper_order_tool(&mut state, &args).unwrap();
+        assert!(result.contains("\"warnings\""));
+        assert!(result.contains("NOPE"));
+        assert!(result.contains("\"state\": \"filled\""));
         let _ = std::fs::remove_file(path);
     }
 }

@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased (international venue awareness)
+
+Closes one of the five gaps `smart-dynamic-hedge`'s `docs/ROADMAP.md`
+Phase 4 named as still open across the system: international
+instrument/venue schemas existed in `market-system-contracts` as an
+untested Phase 1 scaffold, and nothing consumed them anywhere.
+
+- **New `jurisdiction_venue` module**: `VenueProfile`/`JurisdictionProfile`,
+  hand-transcribed from `market-system-contracts`'s
+  `jurisdiction-venue-profile.schema.json`. `VenueRegistry::with_demo_fixtures()`
+  seeds two genuinely different real venues — NYSE Arca (`America/New_York`,
+  USD, T+1, penny ticks) and Tokyo Stock Exchange (`Asia/Tokyo`, JPY,
+  T+2, yen-band ticks, a split lunch-break session with two separate
+  `regular` phases) — matching `market-system-contracts`'s own new golden
+  fixtures exactly, not palette-swapped U.S. data.
+- **`PolicyOutcome` gained a `warnings: Vec<String>` field**, separate
+  from `reason_codes`: a warning never changes the decision and never
+  blocks submission. `check_venue_profile_availability` is the first
+  producer — per `03-create-trade-guard-mcp.md`'s international-
+  architecture section ("allow paper simulation only with a visible
+  limitation"), a missing or not-yet-effective/expired venue profile
+  attaches a warning to an otherwise-successful paper order rather than
+  rejecting it. This repository has no live-execution path at all, so
+  the "block live execution" half of that guidance was already
+  unconditionally true before this change; the warning is what makes the
+  second half real.
+- **New `get-venue-profile` MCP tool** (14 tools total, was 13).
+- Verified end to end against the compiled release binary: a real
+  `get-venue-profile` lookup returning the Tokyo Stock Exchange fixture,
+  an unconfigured venue lookup failing cleanly, and a real paper order
+  against an unregistered venue (`XLON`) filling successfully with the
+  warning attached in the returned `policy_outcome`.
+- **11 new tests, 160 total** (was 149), `cargo clippy --workspace
+  --all-targets` clean.
+
 ## Unreleased (paper-only vertical slice: typed contracts, evidence gate, atomic paper execution, hash-chained audit, MCP server)
 
 Implemented `06-implementation-order-and-acceptance.md` Phase 3 — "the

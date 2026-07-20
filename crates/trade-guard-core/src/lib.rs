@@ -21,6 +21,7 @@ pub mod decimal;
 pub mod evidence;
 pub mod execution;
 pub mod instrument;
+pub mod jurisdiction_venue;
 pub mod legal_status;
 pub mod mcp;
 pub mod order;

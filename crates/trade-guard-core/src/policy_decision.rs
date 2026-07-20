@@ -30,43 +30,70 @@ impl PolicyDecision {
 /// The full explainable result of running policy against a `TradeIntent`:
 /// not just allow/deny, but the reason codes a caller (or an operator
 /// reviewing `list-recent-decisions`) needs to understand why.
+///
+/// `warnings` is deliberately separate from `reason_codes`: a warning
+/// never changes `decision` and never blocks submission — it is the
+/// "visible limitation" `03-create-trade-guard-mcp.md`'s international
+/// architecture section calls for ("If a required profile is missing or
+/// stale, block live execution and allow paper simulation only with a
+/// visible limitation"). A missing venue profile
+/// (`jurisdiction_venue::check_venue_profile_availability`) is the first,
+/// and so far only, producer of a warning.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct PolicyOutcome {
     pub decision: PolicyDecision,
     pub reason_codes: Vec<String>,
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
 
 impl PolicyOutcome {
     pub fn allow() -> Self {
-        PolicyOutcome { decision: PolicyDecision::Allow, reason_codes: Vec::new() }
+        PolicyOutcome { decision: PolicyDecision::Allow, reason_codes: Vec::new(), warnings: Vec::new() }
     }
 
     pub fn reject(decision: PolicyDecision, reason_code: impl Into<String>) -> Self {
-        PolicyOutcome { decision, reason_codes: vec![reason_code.into()] }
+        PolicyOutcome { decision, reason_codes: vec![reason_code.into()], warnings: Vec::new() }
     }
 
     pub fn is_allowed(&self) -> bool {
         self.decision.permits_submission()
     }
 
-    /// Merges another outcome's reason codes into this one, keeping the
-    /// more restrictive of the two decisions (`Allow` loses to anything
-    /// else; among two rejections, the first-seen one wins so the most
-    /// specific/relevant check that ran first stays the headline
-    /// decision).
+    /// Appends one non-blocking warning, keeping the decision and reason
+    /// codes untouched. Consuming/returning `Self` so call sites can
+    /// chain it: `outcome.with_warning(msg)`.
+    pub fn with_warning(mut self, warning: impl Into<String>) -> Self {
+        self.warnings.push(warning.into());
+        self
+    }
+
+    /// Merges another outcome's reason codes and warnings into this one,
+    /// keeping the more restrictive of the two decisions (`Allow` loses
+    /// to anything else; among two rejections, the first-seen one wins
+    /// so the most specific/relevant check that ran first stays the
+    /// headline decision). Warnings always accumulate regardless of
+    /// which side's decision wins — a warning is informational, not part
+    /// of the allow/reject arbitration.
     pub fn and(self, other: PolicyOutcome) -> PolicyOutcome {
         if !self.is_allowed() {
             let mut reason_codes = self.reason_codes;
             reason_codes.extend(other.reason_codes);
-            return PolicyOutcome { decision: self.decision, reason_codes };
+            let mut warnings = self.warnings;
+            warnings.extend(other.warnings);
+            return PolicyOutcome { decision: self.decision, reason_codes, warnings };
         }
         if !other.is_allowed() {
-            return other;
+            let mut warnings = self.warnings;
+            warnings.extend(other.warnings);
+            return PolicyOutcome { warnings, ..other };
         }
         let mut reason_codes = self.reason_codes;
         reason_codes.extend(other.reason_codes);
-        PolicyOutcome { decision: PolicyDecision::Allow, reason_codes }
+        let mut warnings = self.warnings;
+        warnings.extend(other.warnings);
+        PolicyOutcome { decision: PolicyDecision::Allow, reason_codes, warnings }
     }
 }
 

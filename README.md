@@ -27,8 +27,15 @@ per-module status. In short:
   simulator.
 - A hash-chained, tamper-evident SQLite audit log (`audit-integrity`,
   `list-recent-decisions`, `replay-decision`).
+- International venue awareness (`get-venue-profile`): a
+  `VenueProfile`/`JurisdictionProfile` registry seeded with two genuinely
+  different real venues (NYSE Arca and Tokyo Stock Exchange — different
+  timezone, currency, settlement convention, session structure). A
+  missing or stale venue profile never blocks a paper order; it attaches
+  a visible `PolicyOutcome.warnings` entry instead, per
+  `03-create-trade-guard-mcp.md`'s international-architecture guidance.
 - A real MCP stdio JSON-RPC server (`cargo run --bin trade_guard_server --
-  mcp`) exposing 13 tools.
+  mcp`) exposing 14 tools.
 
 **There is no live-execution path.** Not "present but disabled" —
 genuinely absent from the source. `authorize_and_submit_paper_order`
@@ -64,7 +71,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets
 ```
 
-149 tests, all passing; `clippy::all` clean. See
+160 tests, all passing; `clippy::all` clean. See
 `docs/CAPABILITY_STATUS.md` for what's covered — including two required
 tests from `03-create-trade-guard-mcp.md` this pass verified directly: a
 research-only evidence bundle is rejected for live-mode (#1), and a
