@@ -12,15 +12,24 @@ license = "GPL-3.0-or-later"
 publish = false
 
 [workspace.dependencies]
-# Empty for now: no module in this repository has real logic yet (see
-# docs/CAPABILITY_STATUS.md), so there is nothing to depend on. When real
-# implementation starts, follow market-intelligence-mcp's precedent: keep
-# only `serde`/`serde_json` (JSON is the cross-repo/cross-language wire
-# format and hand-rolling a parser is a worse security trade-off than using
-# the ecosystem-standard, heavily audited crate) and hand-roll everything
-# else that's reasonably hand-rollable (see
-# market_intelligence_core::utc_timestamp for the pattern this repo should
-# copy rather than reaching for the `time`/`uuid`/`thiserror` crates).
+# Following market-intelligence-mcp's precedent: `serde`/`serde_json` are
+# the cross-repo/cross-language wire format (hand-rolling a JSON parser
+# would be a worse security trade-off than using the ecosystem-standard,
+# heavily audited crate) and everything else reasonably hand-rollable is
+# hand-rolled (see `trade_guard_core::utc_timestamp`/`decimal`/`sha256`,
+# copying `market_intelligence_core::utc_timestamp`'s pattern rather than
+# reaching for the `time`/`uuid`/`thiserror` crates).
+#
+# `rusqlite` is this crate's one deliberate exception, matching
+# `smart-dynamic-hedge`'s `smart-hedge-store`: the SQLite file format
+# (WAL, B-tree pages, journal recovery) is exactly the kind of complex,
+# correctness-critical format that is a *worse* trade-off to hand-roll
+# than to depend on. `float_roundtrip` avoids the exact same
+# hash-after-replay integrity bug `smart-dynamic-hedge` found and fixed —
+# see that repo's `requirements/LLR.md` SDH-LLR-072 correction note.
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

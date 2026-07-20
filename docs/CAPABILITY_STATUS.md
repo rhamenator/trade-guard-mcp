@@ -1,43 +1,74 @@
 # Capability status
 
-Every module in `crates/trade-guard-core/src/` is **not-started**: a
-doc-commented placeholder file only, no logic, no tests. This repository
-was created in the same session as `market-system-contracts` and
-`market-intelligence-mcp` to establish the three-repository security
-boundary, but implementation effort that session went into
-`market-intelligence-mcp`'s Phase 2 slice instead — see that repo's
-`docs/CAPABILITY_STATUS.md` for what a completed vertical slice looks like
-in this system.
+Per `06-implementation-order-and-acceptance.md`'s status vocabulary
+(`not-started, schema-only, mock, fixture-tested, record-replay-tested,
+sandbox-tested, demo-tested, paper-tested, certification-tested,
+live-tested, disabled-by-policy, unavailable-by-entitlement,
+unavailable-by-jurisdiction, deprecated`).
 
-No provider (paper simulator, Alpaca, IBKR, Saxo, OANDA, any crypto
-exchange, FIX, any direct venue) is implemented at any level.
+## Summary
 
-No order-entry, authorization, or audit code exists. **Do not build against
-this repository or assume any tool, type, or endpoint described in
-`03-create-trade-guard-mcp.md` currently exists.**
+**Status: paper-tested vertical slice.** The smallest trustworthy complete
+path `03-create-trade-guard-mcp.md`'s own closing line asks for — typed
+intent → authoritative state → deterministic policy → paper submission →
+durable state → replay — is implemented, tested, and runnable as a real
+MCP stdio server, not just a set of tested libraries. **149 tests**,
+`cargo test --workspace` all green, `cargo clippy --workspace
+--all-targets` clean under `clippy::all`.
 
-The workspace does carry two pieces of policy ahead of real code, so future
-implementation starts from the right defaults instead of drifting from
-`market-intelligence-mcp`'s: `[workspace.lints]` forbids `unsafe_code` and
-warns on `clippy::all`, and the dependency list is empty (see
-`CHANGELOG.md`) pending the same hand-roll-what's-reasonable policy used
-there.
+## Crates
 
-## Recommended next milestone
+| Module | Status | Notes |
+|---|---|---|
+| `decimal` | fixture-tested | Hand-rolled decimal-safe fixed-point type (8 fractional digits) matching `common.schema.json#/$defs/decimal-string`'s grammar exactly; rejects `NaN`/`Infinity`/leading-zero/negative-zero/exponent forms. |
+| `sha256` | fixture-tested | Duplicated from `smart-dynamic-hedge`'s `smart_hedge_models::sha256`; verified against the same NIST test vectors. |
+| `utc_timestamp` | fixture-tested | Duplicated from `market-intelligence-mcp`'s `market_intelligence_core::utc_timestamp`, including its fuzz-smoke tests. |
+| `instrument`, `trade_intent`, `evidence`, `legal_status`, `account`, `order`, `policy_decision` | fixture-tested | Hand-transcribed from `market-system-contracts/schemas/2.0.0/{instrument-id,trade-intent,evidence-bundle,legal-status}.schema.json`, the same way `market_intelligence_core` transcribes its own schemas. |
+| `policy` | fixture-tested | `validate_trade_intent` (schema-shape/sanity), `check_evidence_eligibility` (the MNPI/source-policy gate — required tests #1 and #3 from `03-create-trade-guard-mcp.md` are directly covered), `check_buying_power`. |
+| `providers` | fixture-tested | `PaperSimulator` — deterministic, in-memory, no persisted quote state needed (synthetic quotes are a pure function of `sha256(instrument_id)`). Market orders always fill; limit orders fill only if marketable, else stay open. No resting order book, no latency/slippage model — documented limitation, see module doc comment. |
+| `audit` | fixture-tested | `AuditStore` — hash-chained SQLite append-only log (the one `rusqlite` dependency exception, matching `smart-dynamic-hedge`'s `smart-hedge-store`). `verify_integrity` detects both payload tampering and record deletion (required test #22) via direct raw-SQL corruption tests. Durable idempotency-key lookup backs the dedup guarantee in `execution`. |
+| `execution` | fixture-tested | `authorize_and_submit_paper_order` — the atomic protocol. Required test #14 (duplicate idempotency key returns the original result, never submits twice) is directly covered, along with live-mode rejection, buying-power rejection, and account-mismatch rejection, each verified to leave the account/position untouched. |
+| `auth` | fixture-tested | Minimal: a single stdio caller always resolves to the `Model` role (matches `smart-dynamic-hedge`'s own stdio-trusted-local-client precedent). No remote transport, so no real authentication exists yet — documented, not silently assumed. |
+| `tools`, `mcp`, `state` | fixture-tested + real end-to-end | Hand-rolled stdio JSON-RPC 2.0 transport (no MCP SDK dependency), 13 tools (see below). Verified with a real piped multi-message session against the compiled release binary, including a real paper fill and a real duplicate-idempotency-key round trip. |
+| `risk` (market-abuse surveillance), `reconciliation`, `telemetry`, `admin` | **not-started, deliberately deferred** | Each module's own doc comment explains why: market-abuse detection needs multi-account/multi-order correlation this single-account slice has no reason for yet; reconciliation has nothing to reconcile against until a real (non-paper-simulator) provider exists; telemetry is a real dependency this stdio-local, single-caller slice doesn't need yet; admin/live-arming has nothing to gate since no live path exists at all. |
 
-Per `06-implementation-order-and-acceptance.md` Phase 3: build the
-authoritative account/risk/execution path against the internal paper
-simulator only, before any real broker. Concretely:
+## Tools implemented (13, all paper/read-only — zero live tools exist)
 
-1. Hand-transcribe `TradeIntent`, `EvidenceBundle` (read-only consumer),
-   and account/position/order types from `market-system-contracts` into
-   `trade_guard_core::models`, the same way `market_intelligence_core` does
-   it in the sibling repository.
-2. Implement `trade_guard_core::policy::check_evidence_eligibility`
-   against a stubbed `EvidenceBundle` — this is the one concrete,
-   well-specified cross-repo contract point with `market-intelligence-mcp`.
-3. Implement the atomic `authorize-and-submit-paper-order` protocol against
-   an in-memory paper simulator, with idempotency-key deduplication as the
-   first test.
-4. Only then add MCP transport, a real broker adapter, or any live-mode
-   code.
+```text
+health, capabilities, tool-catalog, self-test
+validate-trade-intent, check-evidence-eligibility
+get-account-snapshot, get-positions, get-open-orders
+authorize-and-submit-paper-order
+list-recent-decisions, replay-decision, audit-integrity
+```
+
+`cancel-paper-order`/`replace-paper-order` are **deliberately not
+implemented**: `PaperSimulator` keeps no persistent open-order book across
+calls, so a cancel tool would have nothing real to act on — see
+`tools.rs`'s module doc comment.
+
+No live-execution tool exists **in source**, not merely disabled at
+runtime — `execution::authorize_and_submit_paper_order` rejects any
+live-mode `TradeIntent` outright before any account mutation or provider
+call.
+
+## Providers
+
+Only `paper-sim` (the built-in deterministic simulator) exists at any
+level. `alpaca`, `ibkr`, `saxo`, `oanda`, crypto exchanges, generic FIX,
+and direct-venue adapters are all `not-started`, per
+`06-implementation-order-and-acceptance.md` Phase 6 — intentionally
+deferred, not attempted and abandoned.
+
+## What this vertical slice proves, and what it doesn't
+
+Proves: the atomic authorize-and-submit protocol is idempotent and
+durable; the evidence-eligibility gate correctly distinguishes paper-safe
+from live-safe evidence and cannot be bypassed by mode; the audit log
+detects both payload tampering and record deletion; a real MCP client can
+drive the whole thing over stdio end to end.
+
+Does not prove: behavior against a real broker/venue (none exists);
+behavior under concurrent/remote callers (stdio is single request at a
+time); market-abuse surveillance (not built); anything about live-mode
+correctness (no live path exists to be correct or incorrect about).
