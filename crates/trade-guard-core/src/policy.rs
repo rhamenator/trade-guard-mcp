@@ -27,24 +27,42 @@ pub fn validate_trade_intent(intent: &TradeIntent, now: UtcTimestamp) -> PolicyO
     }
     use crate::trade_intent::OrderType;
     match intent.order_type {
-        OrderType::Limit | OrderType::LimitOnClose => {
-            match &intent.limit_price {
-                Some(p) if !p.is_negative() && !p.is_zero() => {}
-                _ => return PolicyOutcome::reject(PolicyDecision::Reject, "limit-price-required-for-limit-order"),
+        OrderType::Limit | OrderType::LimitOnClose => match &intent.limit_price {
+            Some(p) if !p.is_negative() && !p.is_zero() => {}
+            _ => {
+                return PolicyOutcome::reject(
+                    PolicyDecision::Reject,
+                    "limit-price-required-for-limit-order",
+                );
             }
-        }
+        },
         OrderType::Stop => match &intent.stop_price {
             Some(p) if !p.is_negative() && !p.is_zero() => {}
-            _ => return PolicyOutcome::reject(PolicyDecision::Reject, "stop-price-required-for-stop-order"),
+            _ => {
+                return PolicyOutcome::reject(
+                    PolicyDecision::Reject,
+                    "stop-price-required-for-stop-order",
+                );
+            }
         },
         OrderType::StopLimit => {
             match &intent.limit_price {
                 Some(p) if !p.is_negative() && !p.is_zero() => {}
-                _ => return PolicyOutcome::reject(PolicyDecision::Reject, "limit-price-required-for-stop-limit-order"),
+                _ => {
+                    return PolicyOutcome::reject(
+                        PolicyDecision::Reject,
+                        "limit-price-required-for-stop-limit-order",
+                    );
+                }
             }
             match &intent.stop_price {
                 Some(p) if !p.is_negative() && !p.is_zero() => {}
-                _ => return PolicyOutcome::reject(PolicyDecision::Reject, "stop-price-required-for-stop-limit-order"),
+                _ => {
+                    return PolicyOutcome::reject(
+                        PolicyDecision::Reject,
+                        "stop-price-required-for-stop-limit-order",
+                    );
+                }
             }
         }
         _ => {}
@@ -64,14 +82,21 @@ pub fn validate_trade_intent(intent: &TradeIntent, now: UtcTimestamp) -> PolicyO
 /// authorized. `bundle` is `None` when the intent cites no evidence at
 /// all (`evidence_bundle_id: null`) — acceptable for paper/observe/
 /// advisory modes, never for a live-execution mode.
-pub fn check_evidence_eligibility(intent: &TradeIntent, bundle: Option<&EvidenceBundle>, now: UtcTimestamp) -> PolicyOutcome {
+pub fn check_evidence_eligibility(
+    intent: &TradeIntent,
+    bundle: Option<&EvidenceBundle>,
+    now: UtcTimestamp,
+) -> PolicyOutcome {
     let requires_evidence = intent.mode.requests_live_execution();
 
     let bundle = match bundle {
         Some(b) => b,
         None => {
             return if requires_evidence {
-                PolicyOutcome::reject(PolicyDecision::BlockedBySourcePolicy, "live-execution-requires-evidence-bundle")
+                PolicyOutcome::reject(
+                    PolicyDecision::BlockedBySourcePolicy,
+                    "live-execution-requires-evidence-bundle",
+                )
             } else {
                 PolicyOutcome::allow()
             };
@@ -79,24 +104,43 @@ pub fn check_evidence_eligibility(intent: &TradeIntent, bundle: Option<&Evidence
     };
 
     if !bundle.is_internally_consistent() {
-        return PolicyOutcome::reject(PolicyDecision::BlockedBySourcePolicy, "evidence-bundle-internally-inconsistent");
+        return PolicyOutcome::reject(
+            PolicyDecision::BlockedBySourcePolicy,
+            "evidence-bundle-internally-inconsistent",
+        );
     }
     if bundle.quarantine_count > 0 {
-        return PolicyOutcome::reject(PolicyDecision::BlockedBySourcePolicy, "evidence-bundle-has-quarantined-records");
+        return PolicyOutcome::reject(
+            PolicyDecision::BlockedBySourcePolicy,
+            "evidence-bundle-has-quarantined-records",
+        );
     }
-    if bundle.created_at.saturating_diff_seconds(&intent.decision_time) > 0 {
-        return PolicyOutcome::reject(PolicyDecision::BlockedBySourcePolicy, "evidence-bundle-created-after-decision");
+    if bundle
+        .created_at
+        .saturating_diff_seconds(&intent.decision_time)
+        > 0
+    {
+        return PolicyOutcome::reject(
+            PolicyDecision::BlockedBySourcePolicy,
+            "evidence-bundle-created-after-decision",
+        );
     }
     for record in &bundle.records {
         if let Some(public_time) = &record.public_availability_time
             && public_time.saturating_diff_seconds(&now) > 0
         {
-            return PolicyOutcome::reject(PolicyDecision::BlockedBySourcePolicy, "evidence-record-future-public-availability-time");
+            return PolicyOutcome::reject(
+                PolicyDecision::BlockedBySourcePolicy,
+                "evidence-record-future-public-availability-time",
+            );
         }
     }
 
     if requires_evidence && !bundle.is_live_execution_eligible() {
-        return PolicyOutcome::reject(PolicyDecision::BlockedBySourcePolicy, "evidence-bundle-not-live-execution-eligible");
+        return PolicyOutcome::reject(
+            PolicyDecision::BlockedBySourcePolicy,
+            "evidence-bundle-not-live-execution-eligible",
+        );
     }
 
     PolicyOutcome::allow()
@@ -184,14 +228,20 @@ mod tests {
     fn validate_rejects_nonpositive_quantity() {
         let mut i = intent(IntentMode::Paper);
         i.quantity = Decimal::ZERO;
-        assert_eq!(validate_trade_intent(&i, UtcTimestamp::UNIX_EPOCH).decision, PolicyDecision::Reject);
+        assert_eq!(
+            validate_trade_intent(&i, UtcTimestamp::UNIX_EPOCH).decision,
+            PolicyDecision::Reject
+        );
     }
 
     #[test]
     fn validate_rejects_limit_order_without_limit_price() {
         let mut i = intent(IntentMode::Paper);
         i.order_type = OrderType::Limit;
-        assert_eq!(validate_trade_intent(&i, UtcTimestamp::UNIX_EPOCH).decision, PolicyDecision::Reject);
+        assert_eq!(
+            validate_trade_intent(&i, UtcTimestamp::UNIX_EPOCH).decision,
+            PolicyDecision::Reject
+        );
         i.limit_price = Some(Decimal::parse("100").unwrap());
         assert!(validate_trade_intent(&i, UtcTimestamp::UNIX_EPOCH).is_allowed());
     }
@@ -201,21 +251,30 @@ mod tests {
         let mut i = intent(IntentMode::Paper);
         i.expires_at = Some(UtcTimestamp::UNIX_EPOCH);
         let now = UtcTimestamp::from_unix(1000, 0);
-        assert_eq!(validate_trade_intent(&i, now).decision, PolicyDecision::Expired);
+        assert_eq!(
+            validate_trade_intent(&i, now).decision,
+            PolicyDecision::Expired
+        );
     }
 
     #[test]
     fn validate_rejects_future_decision_time() {
         let mut i = intent(IntentMode::Paper);
         i.decision_time = UtcTimestamp::from_unix(1000, 0);
-        assert_eq!(validate_trade_intent(&i, UtcTimestamp::UNIX_EPOCH).decision, PolicyDecision::Reject);
+        assert_eq!(
+            validate_trade_intent(&i, UtcTimestamp::UNIX_EPOCH).decision,
+            PolicyDecision::Reject
+        );
     }
 
     #[test]
     fn validate_rejects_out_of_range_confidence() {
         let mut i = intent(IntentMode::Paper);
         i.confidence = 1.5;
-        assert_eq!(validate_trade_intent(&i, UtcTimestamp::UNIX_EPOCH).decision, PolicyDecision::Reject);
+        assert_eq!(
+            validate_trade_intent(&i, UtcTimestamp::UNIX_EPOCH).decision,
+            PolicyDecision::Reject
+        );
     }
 
     #[test]
@@ -245,14 +304,18 @@ mod tests {
     fn research_only_bundle_is_allowed_for_paper_mode() {
         let i = intent(IntentMode::Paper);
         let bundle = eligible_bundle(BundlePurpose::Research);
-        assert!(check_evidence_eligibility(&i, Some(&bundle), UtcTimestamp::UNIX_EPOCH).is_allowed());
+        assert!(
+            check_evidence_eligibility(&i, Some(&bundle), UtcTimestamp::UNIX_EPOCH).is_allowed()
+        );
     }
 
     #[test]
     fn live_execution_purpose_bundle_is_allowed_for_live_mode() {
         let i = intent(IntentMode::GuardedLive);
         let bundle = eligible_bundle(BundlePurpose::LiveExecution);
-        assert!(check_evidence_eligibility(&i, Some(&bundle), UtcTimestamp::UNIX_EPOCH).is_allowed());
+        assert!(
+            check_evidence_eligibility(&i, Some(&bundle), UtcTimestamp::UNIX_EPOCH).is_allowed()
+        );
     }
 
     #[test]
@@ -281,26 +344,42 @@ mod tests {
         i.decision_time = UtcTimestamp::UNIX_EPOCH;
         let mut bundle = eligible_bundle(BundlePurpose::Research);
         bundle.created_at = UtcTimestamp::from_unix(10_000, 0);
-        let outcome = check_evidence_eligibility(&i, Some(&bundle), UtcTimestamp::from_unix(20_000, 0));
+        let outcome =
+            check_evidence_eligibility(&i, Some(&bundle), UtcTimestamp::from_unix(20_000, 0));
         assert_eq!(outcome.decision, PolicyDecision::BlockedBySourcePolicy);
     }
 
     #[test]
     fn buying_power_check_allows_a_notional_within_available_cash() {
-        let acct = AccountSnapshot::new("acct-1", "USD", Decimal::from_i64(1000), UtcTimestamp::UNIX_EPOCH);
+        let acct = AccountSnapshot::new(
+            "acct-1",
+            "USD",
+            Decimal::from_i64(1000),
+            UtcTimestamp::UNIX_EPOCH,
+        );
         assert!(check_buying_power(&acct, Decimal::from_i64(500)).is_allowed());
     }
 
     #[test]
     fn buying_power_check_rejects_a_notional_exceeding_available_cash() {
-        let acct = AccountSnapshot::new("acct-1", "USD", Decimal::from_i64(1000), UtcTimestamp::UNIX_EPOCH);
+        let acct = AccountSnapshot::new(
+            "acct-1",
+            "USD",
+            Decimal::from_i64(1000),
+            UtcTimestamp::UNIX_EPOCH,
+        );
         let outcome = check_buying_power(&acct, Decimal::from_i64(1001));
         assert_eq!(outcome.decision, PolicyDecision::BlockedByRisk);
     }
 
     #[test]
     fn buying_power_check_accounts_for_existing_reservations() {
-        let mut acct = AccountSnapshot::new("acct-1", "USD", Decimal::from_i64(1000), UtcTimestamp::UNIX_EPOCH);
+        let mut acct = AccountSnapshot::new(
+            "acct-1",
+            "USD",
+            Decimal::from_i64(1000),
+            UtcTimestamp::UNIX_EPOCH,
+        );
         acct.reserved_cash = Decimal::from_i64(600);
         assert!(check_buying_power(&acct, Decimal::from_i64(400)).is_allowed());
         assert!(!check_buying_power(&acct, Decimal::from_i64(401)).is_allowed());

@@ -38,7 +38,11 @@ impl OrderState {
     pub fn is_terminal(self) -> bool {
         matches!(
             self,
-            OrderState::Rejected | OrderState::Filled | OrderState::Canceled | OrderState::Expired | OrderState::ProviderRejected
+            OrderState::Rejected
+                | OrderState::Filled
+                | OrderState::Canceled
+                | OrderState::Expired
+                | OrderState::ProviderRejected
         )
     }
 }
@@ -85,17 +89,33 @@ impl Order {
     /// `state` to `PartiallyFilled` or `Filled` depending on whether the
     /// full requested quantity has now been filled.
     pub fn apply_fill(&mut self, fill: Fill) {
-        let prior_notional = self.average_fill_price.unwrap_or(Decimal::ZERO).checked_mul(&self.filled_quantity).unwrap_or(Decimal::ZERO);
-        let fill_notional = fill.price.checked_mul(&fill.quantity).unwrap_or(Decimal::ZERO);
-        let new_filled = self.filled_quantity.checked_add(&fill.quantity).unwrap_or(self.filled_quantity);
+        let prior_notional = self
+            .average_fill_price
+            .unwrap_or(Decimal::ZERO)
+            .checked_mul(&self.filled_quantity)
+            .unwrap_or(Decimal::ZERO);
+        let fill_notional = fill
+            .price
+            .checked_mul(&fill.quantity)
+            .unwrap_or(Decimal::ZERO);
+        let new_filled = self
+            .filled_quantity
+            .checked_add(&fill.quantity)
+            .unwrap_or(self.filled_quantity);
         if !new_filled.is_zero() {
-            let total_notional = prior_notional.checked_add(&fill_notional).unwrap_or(prior_notional);
+            let total_notional = prior_notional
+                .checked_add(&fill_notional)
+                .unwrap_or(prior_notional);
             self.average_fill_price = Some(total_notional.approx_div(&new_filled));
         }
         self.filled_quantity = new_filled;
         self.updated_at = fill.filled_at;
         self.fills.push(fill);
-        self.state = if self.filled_quantity >= self.quantity { OrderState::Filled } else { OrderState::PartiallyFilled };
+        self.state = if self.filled_quantity >= self.quantity {
+            OrderState::Filled
+        } else {
+            OrderState::PartiallyFilled
+        };
     }
 }
 
@@ -177,10 +197,22 @@ mod tests {
 
     #[test]
     fn terminal_states_are_classified_correctly() {
-        for state in [OrderState::Rejected, OrderState::Filled, OrderState::Canceled, OrderState::Expired, OrderState::ProviderRejected] {
+        for state in [
+            OrderState::Rejected,
+            OrderState::Filled,
+            OrderState::Canceled,
+            OrderState::Expired,
+            OrderState::ProviderRejected,
+        ] {
             assert!(state.is_terminal(), "{state:?} should be terminal");
         }
-        for state in [OrderState::IntentReceived, OrderState::Validated, OrderState::RiskReserved, OrderState::Acknowledged, OrderState::PartiallyFilled] {
+        for state in [
+            OrderState::IntentReceived,
+            OrderState::Validated,
+            OrderState::RiskReserved,
+            OrderState::Acknowledged,
+            OrderState::PartiallyFilled,
+        ] {
             assert!(!state.is_terminal(), "{state:?} should not be terminal");
         }
     }

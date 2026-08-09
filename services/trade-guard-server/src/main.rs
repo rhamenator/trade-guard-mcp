@@ -18,11 +18,18 @@ const DEFAULT_ACCOUNT_ALIAS: &str = "paper-default";
 const DEFAULT_STARTING_CASH: i64 = 100_000;
 
 fn audit_db_path() -> PathBuf {
-    std::env::var("TRADE_GUARD_DB").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from(".trade-guard").join("audit.sqlite3"))
+    std::env::var("TRADE_GUARD_DB")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(".trade-guard").join("audit.sqlite3"))
 }
 
 fn build_state() -> Result<GuardState, String> {
-    let account = AccountSnapshot::new(DEFAULT_ACCOUNT_ALIAS, "USD", Decimal::from_i64(DEFAULT_STARTING_CASH), UtcTimestamp::now());
+    let account = AccountSnapshot::new(
+        DEFAULT_ACCOUNT_ALIAS,
+        "USD",
+        Decimal::from_i64(DEFAULT_STARTING_CASH),
+        UtcTimestamp::now(),
+    );
     GuardState::new(account, audit_db_path()).map_err(|e| e.to_string())
 }
 
@@ -65,7 +72,9 @@ fn main() {
             }
         }
         other => {
-            eprintln!("trade-guard-server: unknown command {other:?} (expected \"mcp\" or \"self-test\")");
+            eprintln!(
+                "trade-guard-server: unknown command {other:?} (expected \"mcp\" or \"self-test\")"
+            );
             std::process::exit(2);
         }
     }

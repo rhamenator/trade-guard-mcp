@@ -77,7 +77,8 @@ impl EvidenceBundle {
     /// bundle.
     pub fn is_internally_consistent(&self) -> bool {
         self.quarantine_count == 0
-            && self.all_records_execution_eligible == self.records.iter().all(|r| r.execution_eligible)
+            && self.all_records_execution_eligible
+                == self.records.iter().all(|r| r.execution_eligible)
     }
 }
 

@@ -65,7 +65,10 @@ impl Default for PaperSimulator {
 
 impl PaperSimulator {
     pub fn new() -> Self {
-        PaperSimulator { quotes: HashMap::new(), half_spread: Decimal::parse("0.005").unwrap() }
+        PaperSimulator {
+            quotes: HashMap::new(),
+            half_spread: Decimal::parse("0.005").unwrap(),
+        }
     }
 
     /// Deterministic test/fixture seam: pin an explicit mid price for an
@@ -75,7 +78,11 @@ impl PaperSimulator {
     }
 
     pub fn quote_for(&self, instrument_id: &str) -> Quote {
-        let mid = self.quotes.get(instrument_id).copied().unwrap_or_else(|| synthetic_mid(instrument_id));
+        let mid = self
+            .quotes
+            .get(instrument_id)
+            .copied()
+            .unwrap_or_else(|| synthetic_mid(instrument_id));
         Quote::around_mid(mid, self.half_spread)
     }
 
@@ -86,7 +93,11 @@ impl PaperSimulator {
         let quote = self.quote_for(&order.instrument.instrument_id);
         match order.order_type {
             OrderType::Market | OrderType::MarketOnClose => {
-                let price = if order.side.is_buy_side() { quote.ask } else { quote.bid };
+                let price = if order.side.is_buy_side() {
+                    quote.ask
+                } else {
+                    quote.bid
+                };
                 SimulatedFillOutcome::Filled { price }
             }
             OrderType::Limit | OrderType::LimitOnClose => {
@@ -190,7 +201,9 @@ mod tests {
         sim.set_quote("inst-1", Decimal::from_i64(100));
         let o = order(OrderType::Market, Side::Buy, None);
         match sim.simulate_fill(&o) {
-            SimulatedFillOutcome::Filled { price } => assert_eq!(price.to_decimal_string(), "100.005"),
+            SimulatedFillOutcome::Filled { price } => {
+                assert_eq!(price.to_decimal_string(), "100.005")
+            }
             SimulatedFillOutcome::Open => panic!("expected a fill"),
         }
     }
@@ -201,7 +214,9 @@ mod tests {
         sim.set_quote("inst-1", Decimal::from_i64(100));
         let o = order(OrderType::Market, Side::Sell, None);
         match sim.simulate_fill(&o) {
-            SimulatedFillOutcome::Filled { price } => assert_eq!(price.to_decimal_string(), "99.995"),
+            SimulatedFillOutcome::Filled { price } => {
+                assert_eq!(price.to_decimal_string(), "99.995")
+            }
             SimulatedFillOutcome::Open => panic!("expected a fill"),
         }
     }
@@ -212,7 +227,9 @@ mod tests {
         sim.set_quote("inst-1", Decimal::from_i64(100));
         let o = order(OrderType::Limit, Side::Buy, Some(Decimal::from_i64(101)));
         match sim.simulate_fill(&o) {
-            SimulatedFillOutcome::Filled { price } => assert_eq!(price.to_decimal_string(), "100.005"),
+            SimulatedFillOutcome::Filled { price } => {
+                assert_eq!(price.to_decimal_string(), "100.005")
+            }
             SimulatedFillOutcome::Open => panic!("expected a fill"),
         }
     }

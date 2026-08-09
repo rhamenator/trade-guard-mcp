@@ -148,9 +148,10 @@ impl UtcTimestamp {
     }
 
     pub fn checked_add_seconds(&self, secs: i64) -> Option<Self> {
-        self.secs
-            .checked_add(secs)
-            .map(|s| UtcTimestamp { secs: s, nanos: self.nanos })
+        self.secs.checked_add(secs).map(|s| UtcTimestamp {
+            secs: s,
+            nanos: self.nanos,
+        })
     }
 
     pub fn checked_add_days(&self, days: i64) -> Option<Self> {
@@ -329,7 +330,10 @@ mod tests {
 
     #[test]
     fn epoch_round_trips() {
-        assert_eq!(UtcTimestamp::UNIX_EPOCH.to_rfc3339(), "1970-01-01T00:00:00Z");
+        assert_eq!(
+            UtcTimestamp::UNIX_EPOCH.to_rfc3339(),
+            "1970-01-01T00:00:00Z"
+        );
         assert_eq!(
             UtcTimestamp::parse_rfc3339("1970-01-01T00:00:00Z").unwrap(),
             UtcTimestamp::UNIX_EPOCH
@@ -471,7 +475,10 @@ mod tests {
 
     #[test]
     fn rejects_empty_and_too_short_input() {
-        assert_eq!(UtcTimestamp::parse_rfc3339(""), Err(TimestampParseError::TooShort));
+        assert_eq!(
+            UtcTimestamp::parse_rfc3339(""),
+            Err(TimestampParseError::TooShort)
+        );
         assert_eq!(
             UtcTimestamp::parse_rfc3339("2026-07-19"),
             Err(TimestampParseError::TooShort)

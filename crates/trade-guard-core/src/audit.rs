@@ -24,7 +24,7 @@
 
 use std::path::{Path, PathBuf};
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 use crate::order::Order;
@@ -35,7 +35,8 @@ use crate::utc_timestamp::UtcTimestamp;
 /// A fixed, documented anchor for the first record's `prev_hash` — not a
 /// secret, just a well-known non-record value so the chain has a
 /// consistent starting point to verify against.
-pub const GENESIS_HASH: &str = "sha256:e69ba0ea583c19f5b7d6c3d8ddc0e2a2f1e1f8b7e77e5f7f7c1c25b4c1f3a2e5";
+pub const GENESIS_HASH: &str =
+    "sha256:e69ba0ea583c19f5b7d6c3d8ddc0e2a2f1e1f8b7e77e5f7f7c1c25b4c1f3a2e5";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -63,7 +64,9 @@ impl std::fmt::Display for AuditError {
             AuditError::Sqlite(e) => write!(f, "sqlite error: {e}"),
             AuditError::Io(e) => write!(f, "io error: {e}"),
             AuditError::InvalidJson(e) => write!(f, "invalid stored JSON: {e}"),
-            AuditError::DuplicateIdempotencyKey(k) => write!(f, "idempotency key already recorded: {k}"),
+            AuditError::DuplicateIdempotencyKey(k) => {
+                write!(f, "idempotency key already recorded: {k}")
+            }
         }
     }
 }
@@ -153,13 +156,20 @@ impl AuditStore {
             )",
             [],
         )?;
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at DESC)", [])?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at DESC)",
+            [],
+        )?;
         Ok(())
     }
 
     fn last_content_hash(conn: &Connection) -> Result<String, AuditError> {
         let hash: Option<String> = conn
-            .query_row("SELECT content_hash FROM events ORDER BY seq DESC LIMIT 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT content_hash FROM events ORDER BY seq DESC LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
             .optional()?;
         Ok(hash.unwrap_or_else(|| GENESIS_HASH.to_string()))
     }
@@ -170,7 +180,8 @@ impl AuditStore {
     /// treat that case as "return the original result", not as an error
     /// path to surface to the caller.
     pub fn append(&self, record: &AuditRecord) -> Result<String, AuditError> {
-        let record_json = serde_json::to_string(record).expect("AuditRecord serialization is infallible");
+        let record_json =
+            serde_json::to_string(record).expect("AuditRecord serialization is infallible");
         let conn = self.connect()?;
         let prev_hash = Self::last_content_hash(&conn)?;
         let content_hash = canonical_hash(format!("{record_json}|{prev_hash}").as_bytes());
@@ -197,7 +208,11 @@ impl AuditStore {
     pub fn find_by_idempotency_key(&self, key: &str) -> Result<Option<AuditRecord>, AuditError> {
         let conn = self.connect()?;
         let row: Option<String> = conn
-            .query_row("SELECT record_json FROM events WHERE idempotency_key = ?1", params![key], |r| r.get(0))
+            .query_row(
+                "SELECT record_json FROM events WHERE idempotency_key = ?1",
+                params![key],
+                |r| r.get(0),
+            )
             .optional()?;
         row.map(Self::parse_row).transpose()
     }
@@ -205,7 +220,11 @@ impl AuditStore {
     pub fn get(&self, event_id: &str) -> Result<Option<AuditRecord>, AuditError> {
         let conn = self.connect()?;
         let row: Option<String> = conn
-            .query_row("SELECT record_json FROM events WHERE event_id = ?1", params![event_id], |r| r.get(0))
+            .query_row(
+                "SELECT record_json FROM events WHERE event_id = ?1",
+                params![event_id],
+                |r| r.get(0),
+            )
             .optional()?;
         row.map(Self::parse_row).transpose()
     }
@@ -216,7 +235,9 @@ impl AuditStore {
         let clamped = limit.clamp(1, 200);
         let conn = self.connect()?;
         let mut stmt = conn.prepare("SELECT record_json FROM events ORDER BY seq DESC LIMIT ?1")?;
-        let rows: Vec<String> = stmt.query_map(params![clamped], |r| r.get(0))?.collect::<Result<_, _>>()?;
+        let rows: Vec<String> = stmt
+            .query_map(params![clamped], |r| r.get(0))?
+            .collect::<Result<_, _>>()?;
         rows.into_iter().map(Self::parse_row).collect()
     }
 
@@ -231,23 +252,34 @@ impl AuditStore {
         let conn = self.connect()?;
         let mut stmt = conn.prepare("SELECT seq, event_id, record_json, prev_hash, content_hash FROM events ORDER BY seq ASC")?;
         let rows: Vec<(i64, String, String, String, String)> = stmt
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
+            .query_map([], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            })?
             .collect::<Result<_, _>>()?;
 
         let mut expected_prev = GENESIS_HASH.to_string();
         let mut checked = 0u64;
         for (seq, event_id, record_json, prev_hash, stored_content_hash) in rows {
             if prev_hash != expected_prev {
-                return Ok(IntegrityReport { records_checked: checked, failure: Some(IntegrityFailure::ChainBroken { seq, event_id }) });
+                return Ok(IntegrityReport {
+                    records_checked: checked,
+                    failure: Some(IntegrityFailure::ChainBroken { seq, event_id }),
+                });
             }
             let recomputed = canonical_hash(format!("{record_json}|{prev_hash}").as_bytes());
             if recomputed != stored_content_hash {
-                return Ok(IntegrityReport { records_checked: checked, failure: Some(IntegrityFailure::PayloadTampered { seq, event_id }) });
+                return Ok(IntegrityReport {
+                    records_checked: checked,
+                    failure: Some(IntegrityFailure::PayloadTampered { seq, event_id }),
+                });
             }
             expected_prev = stored_content_hash;
             checked += 1;
         }
-        Ok(IntegrityReport { records_checked: checked, failure: None })
+        Ok(IntegrityReport {
+            records_checked: checked,
+            failure: None,
+        })
     }
 }
 
@@ -261,7 +293,10 @@ mod tests {
 
     fn temp_store() -> (AuditStore, PathBuf) {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!("trade-guard-audit-test-{}-{n}.sqlite3", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "trade-guard-audit-test-{}-{n}.sqlite3",
+            std::process::id()
+        ));
         let store = AuditStore::new(&path).unwrap();
         (store, path)
     }
@@ -283,7 +318,12 @@ mod tests {
         store.append(&record("idem-1")).unwrap();
         let found = store.find_by_idempotency_key("idem-1").unwrap().unwrap();
         assert_eq!(found.event_id, "evt-idem-1");
-        assert!(store.find_by_idempotency_key("idem-missing").unwrap().is_none());
+        assert!(
+            store
+                .find_by_idempotency_key("idem-missing")
+                .unwrap()
+                .is_none()
+        );
         let _ = std::fs::remove_file(path);
     }
 
@@ -292,7 +332,10 @@ mod tests {
         let (store, path) = temp_store();
         store.append(&record("idem-1")).unwrap();
         let result = store.append(&record("idem-1"));
-        assert!(matches!(result, Err(AuditError::DuplicateIdempotencyKey(_))));
+        assert!(matches!(
+            result,
+            Err(AuditError::DuplicateIdempotencyKey(_))
+        ));
         let _ = std::fs::remove_file(path);
     }
 
@@ -349,7 +392,10 @@ mod tests {
 
         let report = store.verify_integrity().unwrap();
         assert!(!report.is_valid());
-        assert!(matches!(report.failure, Some(IntegrityFailure::PayloadTampered { .. })));
+        assert!(matches!(
+            report.failure,
+            Some(IntegrityFailure::PayloadTampered { .. })
+        ));
         let _ = std::fs::remove_file(path);
     }
 
@@ -364,11 +410,15 @@ mod tests {
         store.append(&record("idem-3")).unwrap();
 
         let conn = Connection::open(&path).unwrap();
-        conn.execute("DELETE FROM events WHERE idempotency_key = 'idem-2'", []).unwrap();
+        conn.execute("DELETE FROM events WHERE idempotency_key = 'idem-2'", [])
+            .unwrap();
 
         let report = store.verify_integrity().unwrap();
         assert!(!report.is_valid());
-        assert!(matches!(report.failure, Some(IntegrityFailure::ChainBroken { .. })));
+        assert!(matches!(
+            report.failure,
+            Some(IntegrityFailure::ChainBroken { .. })
+        ));
         let _ = std::fs::remove_file(path);
     }
 
@@ -383,7 +433,8 @@ mod tests {
     fn record_with_a_rejection_and_no_order_round_trips() {
         let (store, path) = temp_store();
         let mut r = record("idem-1");
-        r.policy_outcome = PolicyOutcome::reject(PolicyDecision::BlockedByRisk, "over-buying-power");
+        r.policy_outcome =
+            PolicyOutcome::reject(PolicyDecision::BlockedByRisk, "over-buying-power");
         store.append(&r).unwrap();
         let found = store.find_by_idempotency_key("idem-1").unwrap().unwrap();
         assert_eq!(found.policy_outcome.decision, PolicyDecision::BlockedByRisk);

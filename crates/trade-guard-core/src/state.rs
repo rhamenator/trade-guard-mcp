@@ -21,7 +21,10 @@ pub struct GuardState {
 }
 
 impl GuardState {
-    pub fn new(account: AccountSnapshot, audit_db_path: impl AsRef<Path>) -> Result<Self, AuditError> {
+    pub fn new(
+        account: AccountSnapshot,
+        audit_db_path: impl AsRef<Path>,
+    ) -> Result<Self, AuditError> {
         Ok(GuardState {
             account,
             simulator: PaperSimulator::new(),

@@ -24,7 +24,7 @@
 //! incomplete. See `providers.rs`'s module doc comment for the same
 //! limitation stated from the simulator's side.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::decimal::Decimal;
 use crate::evidence::EvidenceBundle;
@@ -93,9 +93,14 @@ pub fn tool_catalog() -> Result<String, String> {
 pub fn self_test(state: &GuardState) -> Result<String, String> {
     let mut checks: Vec<(&'static str, bool)> = Vec::new();
 
-    checks.push(("sha256_empty_string_matches_nist_vector", sha256_hex(b"") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
+    checks.push((
+        "sha256_empty_string_matches_nist_vector",
+        sha256_hex(b"") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ));
 
-    let decimal_round_trip = Decimal::parse("42.5").map(|d| d.to_decimal_string() == "42.5").unwrap_or(false);
+    let decimal_round_trip = Decimal::parse("42.5")
+        .map(|d| d.to_decimal_string() == "42.5")
+        .unwrap_or(false);
     checks.push(("decimal_round_trip", decimal_round_trip));
 
     let timestamp_round_trip = UtcTimestamp::parse_rfc3339("2026-07-19T00:00:00Z")
@@ -103,7 +108,11 @@ pub fn self_test(state: &GuardState) -> Result<String, String> {
         .unwrap_or(false);
     checks.push(("utc_timestamp_round_trip", timestamp_round_trip));
 
-    let audit_integrity = state.audit.verify_integrity().map(|r| r.is_valid()).unwrap_or(false);
+    let audit_integrity = state
+        .audit
+        .verify_integrity()
+        .map(|r| r.is_valid())
+        .unwrap_or(false);
     checks.push(("audit_chain_integrity", audit_integrity));
 
     let all_passed = checks.iter().all(|(_, ok)| *ok);
@@ -119,36 +128,49 @@ pub fn self_test(state: &GuardState) -> Result<String, String> {
 }
 
 fn parse_intent(arguments: &Value) -> Result<TradeIntent, String> {
-    let raw = arguments.get("intent").ok_or_else(|| "\"intent\" is required".to_string())?;
+    let raw = arguments
+        .get("intent")
+        .ok_or_else(|| "\"intent\" is required".to_string())?;
     serde_json::from_value(raw.clone()).map_err(|e| format!("invalid trade intent: {e}"))
 }
 
 fn parse_optional_evidence(arguments: &Value) -> Result<Option<EvidenceBundle>, String> {
     match arguments.get("evidence") {
         None | Some(Value::Null) => Ok(None),
-        Some(raw) => serde_json::from_value(raw.clone()).map(Some).map_err(|e| format!("invalid evidence bundle: {e}")),
+        Some(raw) => serde_json::from_value(raw.clone())
+            .map(Some)
+            .map_err(|e| format!("invalid evidence bundle: {e}")),
     }
 }
 
 pub fn validate_trade_intent_tool(arguments: &Value) -> Result<String, String> {
     let intent = parse_intent(arguments)?;
     let outcome = validate_trade_intent(&intent, UtcTimestamp::now());
-    Ok(pretty(&serde_json::to_value(&outcome).expect("PolicyOutcome serialization is infallible")))
+    Ok(pretty(
+        &serde_json::to_value(&outcome).expect("PolicyOutcome serialization is infallible"),
+    ))
 }
 
 pub fn check_evidence_eligibility_tool(arguments: &Value) -> Result<String, String> {
     let intent = parse_intent(arguments)?;
     let evidence = parse_optional_evidence(arguments)?;
     let outcome = check_evidence_eligibility(&intent, evidence.as_ref(), UtcTimestamp::now());
-    Ok(pretty(&serde_json::to_value(&outcome).expect("PolicyOutcome serialization is infallible")))
+    Ok(pretty(
+        &serde_json::to_value(&outcome).expect("PolicyOutcome serialization is infallible"),
+    ))
 }
 
 pub fn get_account_snapshot(state: &GuardState) -> Result<String, String> {
-    Ok(pretty(&serde_json::to_value(&state.account).expect("AccountSnapshot serialization is infallible")))
+    Ok(pretty(
+        &serde_json::to_value(&state.account).expect("AccountSnapshot serialization is infallible"),
+    ))
 }
 
 pub fn get_positions(state: &GuardState) -> Result<String, String> {
-    Ok(pretty(&serde_json::to_value(&state.account.positions).expect("positions serialization is infallible")))
+    Ok(pretty(
+        &serde_json::to_value(&state.account.positions)
+            .expect("positions serialization is infallible"),
+    ))
 }
 
 /// Best-effort: scans the recent audit window for order records whose
@@ -167,19 +189,35 @@ pub fn get_open_orders(state: &GuardState, arguments: &Value) -> Result<String, 
 }
 
 pub fn get_venue_profile(state: &GuardState, arguments: &Value) -> Result<String, String> {
-    let venue_mic = arguments.get("venue_mic").and_then(Value::as_str).ok_or_else(|| "\"venue_mic\" is required".to_string())?;
+    let venue_mic = arguments
+        .get("venue_mic")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "\"venue_mic\" is required".to_string())?;
     match state.venues.get(venue_mic) {
-        Some(profile) => Ok(pretty(&serde_json::to_value(profile).expect("VenueProfile serialization is infallible"))),
+        Some(profile) => Ok(pretty(
+            &serde_json::to_value(profile).expect("VenueProfile serialization is infallible"),
+        )),
         None => Err(format!("no venue profile configured for {venue_mic:?}")),
     }
 }
 
-pub fn authorize_and_submit_paper_order_tool(state: &mut GuardState, arguments: &Value) -> Result<String, String> {
+pub fn authorize_and_submit_paper_order_tool(
+    state: &mut GuardState,
+    arguments: &Value,
+) -> Result<String, String> {
     let intent = parse_intent(arguments)?;
     let evidence = parse_optional_evidence(arguments)?;
     let now = UtcTimestamp::now();
-    let result = authorize_and_submit_paper_order(&mut state.account, &state.simulator, &state.audit, &state.venues, intent, evidence.as_ref(), now)
-        .map_err(|e| e.to_string())?;
+    let result = authorize_and_submit_paper_order(
+        &mut state.account,
+        &state.simulator,
+        &state.audit,
+        &state.venues,
+        intent,
+        evidence.as_ref(),
+        now,
+    )
+    .map_err(|e| e.to_string())?;
 
     let body = json!({
         "policy_outcome": result.policy_outcome,
@@ -196,16 +234,23 @@ pub fn authorize_and_submit_paper_order_tool(state: &mut GuardState, arguments: 
 pub fn list_recent_decisions(state: &GuardState, arguments: &Value) -> Result<String, String> {
     let limit = arguments.get("limit").and_then(Value::as_i64).unwrap_or(10);
     let recent = state.audit.list_recent(limit).map_err(|e| e.to_string())?;
-    Ok(pretty(&serde_json::to_value(&recent).expect("records serialization is infallible")))
+    Ok(pretty(
+        &serde_json::to_value(&recent).expect("records serialization is infallible"),
+    ))
 }
 
 pub fn replay_decision(state: &GuardState, arguments: &Value) -> Result<String, String> {
-    let event_id = arguments.get("event_id").and_then(Value::as_str).unwrap_or("");
+    let event_id = arguments
+        .get("event_id")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     if event_id.is_empty() {
         return Err("event_id is required".to_string());
     }
     match state.audit.get(event_id).map_err(|e| e.to_string())? {
-        Some(record) => Ok(pretty(&serde_json::to_value(&record).expect("record serialization is infallible"))),
+        Some(record) => Ok(pretty(
+            &serde_json::to_value(&record).expect("record serialization is infallible"),
+        )),
         None => Err(format!("no audit record found for event_id {event_id:?}")),
     }
 }
@@ -241,7 +286,9 @@ pub fn call_tool(state: &mut GuardState, name: &str, arguments: &Value) -> Resul
         "get-positions" => get_positions(state),
         "get-open-orders" => get_open_orders(state, arguments),
         "get-venue-profile" => get_venue_profile(state, arguments),
-        "authorize-and-submit-paper-order" => authorize_and_submit_paper_order_tool(state, arguments),
+        "authorize-and-submit-paper-order" => {
+            authorize_and_submit_paper_order_tool(state, arguments)
+        }
         "list-recent-decisions" => list_recent_decisions(state, arguments),
         "replay-decision" => replay_decision(state, arguments),
         "audit-integrity" => audit_integrity(state),
@@ -259,8 +306,16 @@ mod tests {
 
     fn test_state() -> (GuardState, std::path::PathBuf) {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!("trade-guard-tools-test-{}-{n}.sqlite3", std::process::id()));
-        let account = AccountSnapshot::new("paper-default", "USD", Decimal::from_i64(100_000), UtcTimestamp::now());
+        let path = std::env::temp_dir().join(format!(
+            "trade-guard-tools-test-{}-{n}.sqlite3",
+            std::process::id()
+        ));
+        let account = AccountSnapshot::new(
+            "paper-default",
+            "USD",
+            Decimal::from_i64(100_000),
+            UtcTimestamp::now(),
+        );
         (GuardState::new(account, &path).unwrap(), path)
     }
 
@@ -300,8 +355,17 @@ mod tests {
 
     #[test]
     fn tool_catalog_never_lists_a_live_tool() {
-        let names: Vec<String> = tool_definitions().as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap().to_string()).collect();
-        for forbidden in ["authorize-and-submit-live-order", "arm-live-execution", "disable-kill-switch"] {
+        let names: Vec<String> = tool_definitions()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap().to_string())
+            .collect();
+        for forbidden in [
+            "authorize-and-submit-live-order",
+            "arm-live-execution",
+            "disable-kill-switch",
+        ] {
             assert!(!names.contains(&forbidden.to_string()));
         }
     }

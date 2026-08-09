@@ -81,7 +81,10 @@ impl IntentMode {
     /// `docs/CAPABILITY_STATUS.md` for why live execution is out of scope
     /// for this vertical slice.
     pub fn requests_live_execution(self) -> bool {
-        matches!(self, IntentMode::GuardedLive | IntentMode::GuardedLiveAutonomous)
+        matches!(
+            self,
+            IntentMode::GuardedLive | IntentMode::GuardedLiveAutonomous
+        )
     }
 }
 
@@ -184,7 +187,14 @@ mod tests {
 
     #[test]
     fn mode_classification_is_mutually_exclusive() {
-        for mode in [IntentMode::Observe, IntentMode::Advisory, IntentMode::Paper, IntentMode::PaperAutonomous, IntentMode::GuardedLive, IntentMode::GuardedLiveAutonomous] {
+        for mode in [
+            IntentMode::Observe,
+            IntentMode::Advisory,
+            IntentMode::Paper,
+            IntentMode::PaperAutonomous,
+            IntentMode::GuardedLive,
+            IntentMode::GuardedLiveAutonomous,
+        ] {
             assert!(!(mode.requests_paper_execution() && mode.requests_live_execution()));
         }
         assert!(IntentMode::Paper.requests_paper_execution());

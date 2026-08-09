@@ -22,7 +22,11 @@ pub struct Position {
 
 impl Position {
     pub fn flat(instrument: InstrumentId) -> Self {
-        Position { instrument, quantity: Decimal::ZERO, average_price: Decimal::ZERO }
+        Position {
+            instrument,
+            quantity: Decimal::ZERO,
+            average_price: Decimal::ZERO,
+        }
     }
 
     pub fn is_flat(&self) -> bool {
@@ -45,7 +49,12 @@ pub struct AccountSnapshot {
 }
 
 impl AccountSnapshot {
-    pub fn new(account_alias: impl Into<String>, currency: impl Into<String>, cash: Decimal, as_of: UtcTimestamp) -> Self {
+    pub fn new(
+        account_alias: impl Into<String>,
+        currency: impl Into<String>,
+        cash: Decimal,
+        as_of: UtcTimestamp,
+    ) -> Self {
         AccountSnapshot {
             account_alias: account_alias.into(),
             currency: currency.into(),
@@ -69,11 +78,15 @@ impl AccountSnapshot {
     }
 
     pub fn position_for(&self, instrument_id: &str) -> Option<&Position> {
-        self.positions.iter().find(|p| p.instrument.instrument_id == instrument_id)
+        self.positions
+            .iter()
+            .find(|p| p.instrument.instrument_id == instrument_id)
     }
 
     pub fn position_for_mut(&mut self, instrument_id: &str) -> Option<&mut Position> {
-        self.positions.iter_mut().find(|p| p.instrument.instrument_id == instrument_id)
+        self.positions
+            .iter_mut()
+            .find(|p| p.instrument.instrument_id == instrument_id)
     }
 
     /// Applies one simulated fill: adjusts cash by the notional
@@ -86,7 +99,13 @@ impl AccountSnapshot {
     /// starts a fresh average price at the fill price for the new
     /// (opposite-sign) remainder. Documented simplification, not a silent
     /// gap: full realized-P&L accounting is future work.
-    pub fn apply_fill(&mut self, instrument: &InstrumentId, side: Side, quantity: Decimal, price: Decimal) {
+    pub fn apply_fill(
+        &mut self,
+        instrument: &InstrumentId,
+        side: Side,
+        quantity: Decimal,
+        price: Decimal,
+    ) {
         let notional = price.checked_mul(&quantity).unwrap_or(Decimal::ZERO);
         if side.is_buy_side() {
             self.cash = self.cash.checked_sub(&notional).unwrap_or(self.cash);
@@ -94,10 +113,18 @@ impl AccountSnapshot {
             self.cash = self.cash.checked_add(&notional).unwrap_or(self.cash);
         }
 
-        let signed_quantity = if side.is_buy_side() { quantity } else { negate(quantity) };
+        let signed_quantity = if side.is_buy_side() {
+            quantity
+        } else {
+            negate(quantity)
+        };
         match self.position_for_mut(&instrument.instrument_id) {
             Some(pos) => apply_signed_fill_to_position(pos, signed_quantity, price),
-            None => self.positions.push(Position { instrument: instrument.clone(), quantity: signed_quantity, average_price: price }),
+            None => self.positions.push(Position {
+                instrument: instrument.clone(),
+                quantity: signed_quantity,
+                average_price: price,
+            }),
         }
     }
 }
@@ -106,16 +133,32 @@ fn negate(d: Decimal) -> Decimal {
     Decimal::ZERO.checked_sub(&d).unwrap_or(d)
 }
 
-fn apply_signed_fill_to_position(pos: &mut Position, signed_fill_quantity: Decimal, fill_price: Decimal) {
-    let same_direction = pos.quantity.is_zero() || (pos.quantity.is_negative() == signed_fill_quantity.is_negative());
-    let new_quantity = pos.quantity.checked_add(&signed_fill_quantity).unwrap_or(pos.quantity);
+fn apply_signed_fill_to_position(
+    pos: &mut Position,
+    signed_fill_quantity: Decimal,
+    fill_price: Decimal,
+) {
+    let same_direction = pos.quantity.is_zero()
+        || (pos.quantity.is_negative() == signed_fill_quantity.is_negative());
+    let new_quantity = pos
+        .quantity
+        .checked_add(&signed_fill_quantity)
+        .unwrap_or(pos.quantity);
 
     if same_direction {
-        let prior_notional = pos.average_price.checked_mul(&pos.quantity.abs()).unwrap_or(Decimal::ZERO);
-        let fill_notional = fill_price.checked_mul(&signed_fill_quantity.abs()).unwrap_or(Decimal::ZERO);
+        let prior_notional = pos
+            .average_price
+            .checked_mul(&pos.quantity.abs())
+            .unwrap_or(Decimal::ZERO);
+        let fill_notional = fill_price
+            .checked_mul(&signed_fill_quantity.abs())
+            .unwrap_or(Decimal::ZERO);
         let new_abs_quantity = new_quantity.abs();
         if !new_abs_quantity.is_zero() {
-            pos.average_price = prior_notional.checked_add(&fill_notional).unwrap_or(prior_notional).approx_div(&new_abs_quantity);
+            pos.average_price = prior_notional
+                .checked_add(&fill_notional)
+                .unwrap_or(prior_notional)
+                .approx_div(&new_abs_quantity);
         }
     } else if new_quantity.is_zero() {
         pos.average_price = Decimal::ZERO;
@@ -135,14 +178,24 @@ mod tests {
 
     #[test]
     fn buying_power_subtracts_reserved_cash() {
-        let mut acct = AccountSnapshot::new("acct-1", "USD", Decimal::from_i64(1000), UtcTimestamp::UNIX_EPOCH);
+        let mut acct = AccountSnapshot::new(
+            "acct-1",
+            "USD",
+            Decimal::from_i64(1000),
+            UtcTimestamp::UNIX_EPOCH,
+        );
         acct.reserved_cash = Decimal::from_i64(300);
         assert_eq!(acct.buying_power().to_decimal_string(), "700");
     }
 
     #[test]
     fn buying_power_never_negative_even_if_over_reserved() {
-        let mut acct = AccountSnapshot::new("acct-1", "USD", Decimal::from_i64(100), UtcTimestamp::UNIX_EPOCH);
+        let mut acct = AccountSnapshot::new(
+            "acct-1",
+            "USD",
+            Decimal::from_i64(100),
+            UtcTimestamp::UNIX_EPOCH,
+        );
         acct.reserved_cash = Decimal::from_i64(500);
         // checked_sub underflows to None here, which we treat as zero
         // buying power rather than propagating a negative "available" cash.
@@ -151,8 +204,14 @@ mod tests {
 
     #[test]
     fn position_lookup_by_instrument_id() {
-        let mut acct = AccountSnapshot::new("acct-1", "USD", Decimal::from_i64(1000), UtcTimestamp::UNIX_EPOCH);
-        acct.positions.push(Position::flat(InstrumentId::equity("inst-1", "SPY")));
+        let mut acct = AccountSnapshot::new(
+            "acct-1",
+            "USD",
+            Decimal::from_i64(1000),
+            UtcTimestamp::UNIX_EPOCH,
+        );
+        acct.positions
+            .push(Position::flat(InstrumentId::equity("inst-1", "SPY")));
         assert!(acct.position_for("inst-1").is_some());
         assert!(acct.position_for("inst-2").is_none());
     }
@@ -165,9 +224,19 @@ mod tests {
 
     #[test]
     fn buy_fill_reduces_cash_and_opens_a_long_position() {
-        let mut acct = AccountSnapshot::new("acct-1", "USD", Decimal::from_i64(10_000), UtcTimestamp::UNIX_EPOCH);
+        let mut acct = AccountSnapshot::new(
+            "acct-1",
+            "USD",
+            Decimal::from_i64(10_000),
+            UtcTimestamp::UNIX_EPOCH,
+        );
         let inst = InstrumentId::equity("inst-1", "SPY");
-        acct.apply_fill(&inst, Side::Buy, Decimal::from_i64(10), Decimal::from_i64(100));
+        acct.apply_fill(
+            &inst,
+            Side::Buy,
+            Decimal::from_i64(10),
+            Decimal::from_i64(100),
+        );
         assert_eq!(acct.cash.to_decimal_string(), "9000");
         let pos = acct.position_for("inst-1").unwrap();
         assert_eq!(pos.quantity.to_decimal_string(), "10");
@@ -176,9 +245,19 @@ mod tests {
 
     #[test]
     fn sell_fill_increases_cash_and_opens_a_short_position() {
-        let mut acct = AccountSnapshot::new("acct-1", "USD", Decimal::from_i64(10_000), UtcTimestamp::UNIX_EPOCH);
+        let mut acct = AccountSnapshot::new(
+            "acct-1",
+            "USD",
+            Decimal::from_i64(10_000),
+            UtcTimestamp::UNIX_EPOCH,
+        );
         let inst = InstrumentId::equity("inst-1", "SPY");
-        acct.apply_fill(&inst, Side::SellShort, Decimal::from_i64(5), Decimal::from_i64(100));
+        acct.apply_fill(
+            &inst,
+            Side::SellShort,
+            Decimal::from_i64(5),
+            Decimal::from_i64(100),
+        );
         assert_eq!(acct.cash.to_decimal_string(), "10500");
         let pos = acct.position_for("inst-1").unwrap();
         assert_eq!(pos.quantity.to_decimal_string(), "-5");
@@ -186,10 +265,25 @@ mod tests {
 
     #[test]
     fn adding_to_a_long_position_computes_weighted_average_price() {
-        let mut acct = AccountSnapshot::new("acct-1", "USD", Decimal::from_i64(100_000), UtcTimestamp::UNIX_EPOCH);
+        let mut acct = AccountSnapshot::new(
+            "acct-1",
+            "USD",
+            Decimal::from_i64(100_000),
+            UtcTimestamp::UNIX_EPOCH,
+        );
         let inst = InstrumentId::equity("inst-1", "SPY");
-        acct.apply_fill(&inst, Side::Buy, Decimal::from_i64(10), Decimal::from_i64(100));
-        acct.apply_fill(&inst, Side::Buy, Decimal::from_i64(10), Decimal::from_i64(102));
+        acct.apply_fill(
+            &inst,
+            Side::Buy,
+            Decimal::from_i64(10),
+            Decimal::from_i64(100),
+        );
+        acct.apply_fill(
+            &inst,
+            Side::Buy,
+            Decimal::from_i64(10),
+            Decimal::from_i64(102),
+        );
         let pos = acct.position_for("inst-1").unwrap();
         assert_eq!(pos.quantity.to_decimal_string(), "20");
         assert_eq!(pos.average_price.to_decimal_string(), "101");
@@ -197,10 +291,25 @@ mod tests {
 
     #[test]
     fn reducing_a_long_position_keeps_the_prior_average_price() {
-        let mut acct = AccountSnapshot::new("acct-1", "USD", Decimal::from_i64(100_000), UtcTimestamp::UNIX_EPOCH);
+        let mut acct = AccountSnapshot::new(
+            "acct-1",
+            "USD",
+            Decimal::from_i64(100_000),
+            UtcTimestamp::UNIX_EPOCH,
+        );
         let inst = InstrumentId::equity("inst-1", "SPY");
-        acct.apply_fill(&inst, Side::Buy, Decimal::from_i64(10), Decimal::from_i64(100));
-        acct.apply_fill(&inst, Side::Sell, Decimal::from_i64(4), Decimal::from_i64(150));
+        acct.apply_fill(
+            &inst,
+            Side::Buy,
+            Decimal::from_i64(10),
+            Decimal::from_i64(100),
+        );
+        acct.apply_fill(
+            &inst,
+            Side::Sell,
+            Decimal::from_i64(4),
+            Decimal::from_i64(150),
+        );
         let pos = acct.position_for("inst-1").unwrap();
         assert_eq!(pos.quantity.to_decimal_string(), "6");
         assert_eq!(pos.average_price.to_decimal_string(), "100");
@@ -208,10 +317,25 @@ mod tests {
 
     #[test]
     fn closing_a_position_exactly_resets_average_price_to_zero() {
-        let mut acct = AccountSnapshot::new("acct-1", "USD", Decimal::from_i64(100_000), UtcTimestamp::UNIX_EPOCH);
+        let mut acct = AccountSnapshot::new(
+            "acct-1",
+            "USD",
+            Decimal::from_i64(100_000),
+            UtcTimestamp::UNIX_EPOCH,
+        );
         let inst = InstrumentId::equity("inst-1", "SPY");
-        acct.apply_fill(&inst, Side::Buy, Decimal::from_i64(10), Decimal::from_i64(100));
-        acct.apply_fill(&inst, Side::Sell, Decimal::from_i64(10), Decimal::from_i64(120));
+        acct.apply_fill(
+            &inst,
+            Side::Buy,
+            Decimal::from_i64(10),
+            Decimal::from_i64(100),
+        );
+        acct.apply_fill(
+            &inst,
+            Side::Sell,
+            Decimal::from_i64(10),
+            Decimal::from_i64(120),
+        );
         let pos = acct.position_for("inst-1").unwrap();
         assert!(pos.is_flat());
         assert_eq!(pos.average_price, Decimal::ZERO);
@@ -219,12 +343,27 @@ mod tests {
 
     #[test]
     fn flipping_a_position_starts_a_fresh_average_price_for_the_remainder() {
-        let mut acct = AccountSnapshot::new("acct-1", "USD", Decimal::from_i64(100_000), UtcTimestamp::UNIX_EPOCH);
+        let mut acct = AccountSnapshot::new(
+            "acct-1",
+            "USD",
+            Decimal::from_i64(100_000),
+            UtcTimestamp::UNIX_EPOCH,
+        );
         let inst = InstrumentId::equity("inst-1", "SPY");
-        acct.apply_fill(&inst, Side::Buy, Decimal::from_i64(10), Decimal::from_i64(100));
+        acct.apply_fill(
+            &inst,
+            Side::Buy,
+            Decimal::from_i64(10),
+            Decimal::from_i64(100),
+        );
         // Selling 15 against a 10-long position: closes the long and opens
         // a 5-short remainder.
-        acct.apply_fill(&inst, Side::Sell, Decimal::from_i64(15), Decimal::from_i64(110));
+        acct.apply_fill(
+            &inst,
+            Side::Sell,
+            Decimal::from_i64(15),
+            Decimal::from_i64(110),
+        );
         let pos = acct.position_for("inst-1").unwrap();
         assert_eq!(pos.quantity.to_decimal_string(), "-5");
         assert_eq!(pos.average_price.to_decimal_string(), "110");

@@ -120,12 +120,25 @@ impl VenueRegistry {
         registry.register(VenueProfile {
             venue_mic: "ARCX".to_string(),
             market_timezone: "America/New_York".to_string(),
-            effective_from: UtcTimestamp::parse_rfc3339("2026-01-01T00:00:00Z").expect("valid fixture timestamp"),
+            effective_from: UtcTimestamp::parse_rfc3339("2026-01-01T00:00:00Z")
+                .expect("valid fixture timestamp"),
             effective_to: None,
             session_phases: vec![
-                SessionPhase { phase_name: SessionPhaseName::PreMarket, opens_local_time: "04:00".to_string(), closes_local_time: "09:30".to_string() },
-                SessionPhase { phase_name: SessionPhaseName::Regular, opens_local_time: "09:30".to_string(), closes_local_time: "16:00".to_string() },
-                SessionPhase { phase_name: SessionPhaseName::AfterHours, opens_local_time: "16:00".to_string(), closes_local_time: "20:00".to_string() },
+                SessionPhase {
+                    phase_name: SessionPhaseName::PreMarket,
+                    opens_local_time: "04:00".to_string(),
+                    closes_local_time: "09:30".to_string(),
+                },
+                SessionPhase {
+                    phase_name: SessionPhaseName::Regular,
+                    opens_local_time: "09:30".to_string(),
+                    closes_local_time: "16:00".to_string(),
+                },
+                SessionPhase {
+                    phase_name: SessionPhaseName::AfterHours,
+                    opens_local_time: "16:00".to_string(),
+                    closes_local_time: "20:00".to_string(),
+                },
             ],
             settlement_convention: Some("T+1".to_string()),
             supported_currencies: vec!["USD".to_string()],
@@ -134,13 +147,30 @@ impl VenueRegistry {
         registry.register(VenueProfile {
             venue_mic: "XJPX".to_string(),
             market_timezone: "Asia/Tokyo".to_string(),
-            effective_from: UtcTimestamp::parse_rfc3339("2026-01-01T00:00:00Z").expect("valid fixture timestamp"),
+            effective_from: UtcTimestamp::parse_rfc3339("2026-01-01T00:00:00Z")
+                .expect("valid fixture timestamp"),
             effective_to: None,
             session_phases: vec![
-                SessionPhase { phase_name: SessionPhaseName::AuctionOpen, opens_local_time: "08:00".to_string(), closes_local_time: "09:00".to_string() },
-                SessionPhase { phase_name: SessionPhaseName::Regular, opens_local_time: "09:00".to_string(), closes_local_time: "11:30".to_string() },
-                SessionPhase { phase_name: SessionPhaseName::Regular, opens_local_time: "12:30".to_string(), closes_local_time: "15:00".to_string() },
-                SessionPhase { phase_name: SessionPhaseName::AuctionClose, opens_local_time: "15:00".to_string(), closes_local_time: "15:25".to_string() },
+                SessionPhase {
+                    phase_name: SessionPhaseName::AuctionOpen,
+                    opens_local_time: "08:00".to_string(),
+                    closes_local_time: "09:00".to_string(),
+                },
+                SessionPhase {
+                    phase_name: SessionPhaseName::Regular,
+                    opens_local_time: "09:00".to_string(),
+                    closes_local_time: "11:30".to_string(),
+                },
+                SessionPhase {
+                    phase_name: SessionPhaseName::Regular,
+                    opens_local_time: "12:30".to_string(),
+                    closes_local_time: "15:00".to_string(),
+                },
+                SessionPhase {
+                    phase_name: SessionPhaseName::AuctionClose,
+                    opens_local_time: "15:00".to_string(),
+                    closes_local_time: "15:25".to_string(),
+                },
             ],
             settlement_convention: Some("T+2".to_string()),
             supported_currencies: vec!["JPY".to_string()],
@@ -156,7 +186,11 @@ impl VenueRegistry {
 /// when the instrument has no `venue_mic` at all (nothing to check —
 /// most fixtures/tests in this system don't set one) or when a current
 /// profile is found.
-pub fn check_venue_profile_availability(instrument: &InstrumentId, registry: &VenueRegistry, now: UtcTimestamp) -> Option<String> {
+pub fn check_venue_profile_availability(
+    instrument: &InstrumentId,
+    registry: &VenueRegistry,
+    now: UtcTimestamp,
+) -> Option<String> {
     let venue_mic = instrument.venue_mic.as_deref()?;
     match registry.get(venue_mic) {
         Some(profile) if profile.is_effective_at(now) => None,
@@ -254,7 +288,11 @@ mod tests {
         assert_ne!(us.min_lot_default, jp.min_lot_default);
         // Japan's session has a split lunch-break structure (two
         // "regular" phases); the US session does not.
-        let jp_regular_count = jp.session_phases.iter().filter(|p| matches!(p.phase_name, SessionPhaseName::Regular)).count();
+        let jp_regular_count = jp
+            .session_phases
+            .iter()
+            .filter(|p| matches!(p.phase_name, SessionPhaseName::Regular))
+            .count();
         assert_eq!(jp_regular_count, 2);
     }
 }

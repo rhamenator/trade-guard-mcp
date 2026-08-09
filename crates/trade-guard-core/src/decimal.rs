@@ -53,8 +53,12 @@ impl fmt::Display for DecimalParseError {
             Self::InvalidDigit => "expected an ASCII digit",
             Self::EmptyFractionalPart => "fractional part after '.' is empty",
             Self::TrailingGarbage => "unexpected trailing characters",
-            Self::NegativeZero => "negative zero (\"-0\" or \"-0.0...0\") is not a valid decimal-string",
-            Self::TooManyFractionalDigits => "more than 8 fractional digits (finer than this type's supported scale)",
+            Self::NegativeZero => {
+                "negative zero (\"-0\" or \"-0.0...0\") is not a valid decimal-string"
+            }
+            Self::TooManyFractionalDigits => {
+                "more than 8 fractional digits (finer than this type's supported scale)"
+            }
             Self::Overflow => "value overflows this type's internal i128 representation",
         };
         f.write_str(msg)
@@ -69,7 +73,9 @@ impl Decimal {
     /// Constructs a `Decimal` directly from a whole-unit `i64`, e.g.
     /// `Decimal::from_i64(100)` is exactly `100`.
     pub fn from_i64(whole: i64) -> Self {
-        Decimal { raw: (whole as i128) * SCALE }
+        Decimal {
+            raw: (whole as i128) * SCALE,
+        }
     }
 
     pub fn is_zero(&self) -> bool {
@@ -157,7 +163,11 @@ impl Decimal {
             .and_then(|v| v.checked_add(frac_value))
             .ok_or(DecimalParseError::Overflow)?;
 
-        let raw = if negative { magnitude.checked_neg().ok_or(DecimalParseError::Overflow)? } else { magnitude };
+        let raw = if negative {
+            magnitude.checked_neg().ok_or(DecimalParseError::Overflow)?
+        } else {
+            magnitude
+        };
         Ok(Decimal { raw })
     }
 
@@ -194,11 +204,15 @@ impl Decimal {
     /// Multiplies two decimal-scaled values (e.g. `quantity * price`),
     /// rescaling back down by `SCALE` after the raw multiplication.
     pub fn checked_mul(&self, other: &Decimal) -> Option<Decimal> {
-        self.raw.checked_mul(other.raw).map(|scaled_up| Decimal { raw: scaled_up / SCALE })
+        self.raw.checked_mul(other.raw).map(|scaled_up| Decimal {
+            raw: scaled_up / SCALE,
+        })
     }
 
     pub fn abs(&self) -> Decimal {
-        Decimal { raw: self.raw.abs() }
+        Decimal {
+            raw: self.raw.abs(),
+        }
     }
 
     /// Approximate division, used only for average-fill-price bookkeeping
@@ -224,7 +238,11 @@ impl Decimal {
         let rounded = format!("{:.8}", quotient.abs());
         let trimmed = rounded.trim_end_matches('0').trim_end_matches('.');
         let trimmed = if trimmed.is_empty() { "0" } else { trimmed };
-        let sign = if quotient.is_sign_negative() && quotient != 0.0 { "-" } else { "" };
+        let sign = if quotient.is_sign_negative() && quotient != 0.0 {
+            "-"
+        } else {
+            ""
+        };
         Decimal::parse(&format!("{sign}{trimmed}")).unwrap_or(Decimal::ZERO)
     }
 }
@@ -274,55 +292,106 @@ mod tests {
     #[test]
     fn parses_and_round_trips_fractions_trimming_trailing_zeros() {
         assert_eq!(Decimal::parse("1.50").unwrap().to_decimal_string(), "1.5");
-        assert_eq!(Decimal::parse("0.00000001").unwrap().to_decimal_string(), "0.00000001");
-        assert_eq!(Decimal::parse("123.456").unwrap().to_decimal_string(), "123.456");
+        assert_eq!(
+            Decimal::parse("0.00000001").unwrap().to_decimal_string(),
+            "0.00000001"
+        );
+        assert_eq!(
+            Decimal::parse("123.456").unwrap().to_decimal_string(),
+            "123.456"
+        );
     }
 
     #[test]
     fn rejects_leading_zero_in_integer_part() {
-        assert_eq!(Decimal::parse("01"), Err(DecimalParseError::LeadingZeroInIntegerPart));
-        assert_eq!(Decimal::parse("00"), Err(DecimalParseError::LeadingZeroInIntegerPart));
+        assert_eq!(
+            Decimal::parse("01"),
+            Err(DecimalParseError::LeadingZeroInIntegerPart)
+        );
+        assert_eq!(
+            Decimal::parse("00"),
+            Err(DecimalParseError::LeadingZeroInIntegerPart)
+        );
     }
 
     #[test]
     fn rejects_bare_dot_forms() {
-        assert_eq!(Decimal::parse(".5"), Err(DecimalParseError::MissingIntegerDigit));
-        assert_eq!(Decimal::parse("5."), Err(DecimalParseError::EmptyFractionalPart));
+        assert_eq!(
+            Decimal::parse(".5"),
+            Err(DecimalParseError::MissingIntegerDigit)
+        );
+        assert_eq!(
+            Decimal::parse("5."),
+            Err(DecimalParseError::EmptyFractionalPart)
+        );
     }
 
     #[test]
     fn rejects_leading_plus_and_exponent_notation() {
-        assert_eq!(Decimal::parse("+5"), Err(DecimalParseError::MissingIntegerDigit));
-        assert_eq!(Decimal::parse("5e10"), Err(DecimalParseError::TrailingGarbage));
-        assert_eq!(Decimal::parse("1.5e10"), Err(DecimalParseError::TrailingGarbage));
+        assert_eq!(
+            Decimal::parse("+5"),
+            Err(DecimalParseError::MissingIntegerDigit)
+        );
+        assert_eq!(
+            Decimal::parse("5e10"),
+            Err(DecimalParseError::TrailingGarbage)
+        );
+        assert_eq!(
+            Decimal::parse("1.5e10"),
+            Err(DecimalParseError::TrailingGarbage)
+        );
     }
 
     #[test]
     fn rejects_negative_zero_in_every_form() {
         assert_eq!(Decimal::parse("-0"), Err(DecimalParseError::NegativeZero));
         assert_eq!(Decimal::parse("-0.0"), Err(DecimalParseError::NegativeZero));
-        assert_eq!(Decimal::parse("-0.00000000"), Err(DecimalParseError::NegativeZero));
+        assert_eq!(
+            Decimal::parse("-0.00000000"),
+            Err(DecimalParseError::NegativeZero)
+        );
     }
 
     #[test]
     fn negative_nonzero_fraction_is_accepted() {
-        assert_eq!(Decimal::parse("-0.01").unwrap().to_decimal_string(), "-0.01");
+        assert_eq!(
+            Decimal::parse("-0.01").unwrap().to_decimal_string(),
+            "-0.01"
+        );
     }
 
     #[test]
     fn rejects_more_than_eight_fractional_digits() {
-        assert_eq!(Decimal::parse("1.123456789"), Err(DecimalParseError::TooManyFractionalDigits));
+        assert_eq!(
+            Decimal::parse("1.123456789"),
+            Err(DecimalParseError::TooManyFractionalDigits)
+        );
         assert!(Decimal::parse("1.12345678").is_ok());
     }
 
     #[test]
     fn rejects_empty_and_garbage_input() {
         assert_eq!(Decimal::parse(""), Err(DecimalParseError::EmptyInput));
-        assert_eq!(Decimal::parse("abc"), Err(DecimalParseError::MissingIntegerDigit));
-        assert_eq!(Decimal::parse("1.2.3"), Err(DecimalParseError::TrailingGarbage));
-        assert_eq!(Decimal::parse("1 "), Err(DecimalParseError::TrailingGarbage));
-        assert_eq!(Decimal::parse("NaN"), Err(DecimalParseError::MissingIntegerDigit));
-        assert_eq!(Decimal::parse("Infinity"), Err(DecimalParseError::MissingIntegerDigit));
+        assert_eq!(
+            Decimal::parse("abc"),
+            Err(DecimalParseError::MissingIntegerDigit)
+        );
+        assert_eq!(
+            Decimal::parse("1.2.3"),
+            Err(DecimalParseError::TrailingGarbage)
+        );
+        assert_eq!(
+            Decimal::parse("1 "),
+            Err(DecimalParseError::TrailingGarbage)
+        );
+        assert_eq!(
+            Decimal::parse("NaN"),
+            Err(DecimalParseError::MissingIntegerDigit)
+        );
+        assert_eq!(
+            Decimal::parse("Infinity"),
+            Err(DecimalParseError::MissingIntegerDigit)
+        );
     }
 
     #[test]
@@ -338,7 +407,10 @@ mod tests {
     fn checked_mul_computes_quantity_times_price() {
         let quantity = Decimal::parse("10").unwrap();
         let price = Decimal::parse("19.99").unwrap();
-        assert_eq!(quantity.checked_mul(&price).unwrap().to_decimal_string(), "199.9");
+        assert_eq!(
+            quantity.checked_mul(&price).unwrap().to_decimal_string(),
+            "199.9"
+        );
     }
 
     #[test]
@@ -355,8 +427,14 @@ mod tests {
 
     #[test]
     fn abs_removes_sign() {
-        assert_eq!(Decimal::parse("-5.5").unwrap().abs().to_decimal_string(), "5.5");
-        assert_eq!(Decimal::parse("5.5").unwrap().abs().to_decimal_string(), "5.5");
+        assert_eq!(
+            Decimal::parse("-5.5").unwrap().abs().to_decimal_string(),
+            "5.5"
+        );
+        assert_eq!(
+            Decimal::parse("5.5").unwrap().abs().to_decimal_string(),
+            "5.5"
+        );
         assert_eq!(Decimal::ZERO.abs(), Decimal::ZERO);
     }
 
@@ -369,7 +447,10 @@ mod tests {
 
     #[test]
     fn approx_div_by_zero_is_zero_not_a_panic() {
-        assert_eq!(Decimal::from_i64(5).approx_div(&Decimal::ZERO), Decimal::ZERO);
+        assert_eq!(
+            Decimal::from_i64(5).approx_div(&Decimal::ZERO),
+            Decimal::ZERO
+        );
     }
 
     #[test]
@@ -429,7 +510,8 @@ mod tests {
             let whole = (rng.next() % 1_000_000) as i64;
             let d = Decimal::from_i64(whole);
             let rendered = d.to_decimal_string();
-            let reparsed = Decimal::parse(&rendered).unwrap_or_else(|e| panic!("failed to reparse {rendered:?}: {e}"));
+            let reparsed = Decimal::parse(&rendered)
+                .unwrap_or_else(|e| panic!("failed to reparse {rendered:?}: {e}"));
             assert_eq!(reparsed, d);
         }
     }

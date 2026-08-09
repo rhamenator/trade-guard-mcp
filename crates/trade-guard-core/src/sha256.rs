@@ -141,7 +141,11 @@ mod tests {
 
     #[test]
     fn digest_is_always_32_bytes() {
-        for input in [&b""[..], b"x", b"a much longer message than the others above"] {
+        for input in [
+            &b""[..],
+            b"x",
+            b"a much longer message than the others above",
+        ] {
             assert_eq!(sha256(input).len(), 32);
         }
     }

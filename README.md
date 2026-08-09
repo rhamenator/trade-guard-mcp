@@ -4,7 +4,7 @@ Authoritative account state, deterministic pre-trade risk policy, idempotent
 execution, reconciliation, audit, and broker/venue adapters (paper and,
 eventually, live) for the Smart Dynamic Hedge system.
 
-- [`smart-dynamic-hedge`](https://github.com/rhamenator/smart-dynamic-hedge) — strategy, research, GUI, and autonomy plane. Sends typed `TradeIntent`s here; never holds unrestricted broker credentials.
+- [`smart-dynamic-hedge-project`](https://github.com/rhamenator/smart-dynamic-hedge-project) — strategy, research, GUI, and autonomy plane. Sends typed `TradeIntent`s here; never holds unrestricted broker credentials.
 - [`market-intelligence-mcp`](https://github.com/rhamenator/market-intelligence-mcp) — public/licensed intelligence. This repo verifies its signed `EvidenceBundle`s but never scrapes the web or generates a market thesis itself.
 - **`trade-guard-mcp`** (this repo) — the only place in the system permitted to hold narrowly-scoped execution credentials, and only once live mode is explicitly armed by an operator.
 
@@ -105,3 +105,11 @@ and tested."
 
 GNU General Public License v3.0 (or, at your option, any later version). See
 [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+## Security and publication status
+
+This repository is paper-only and contains no live broker adapter or live-order
+path. See [SECURITY.md](SECURITY.md) for private vulnerability reporting,
+[the threat model](docs/THREAT_MODEL.md) for the intended security boundary,
+and [the publication-readiness audit](docs/PUBLICATION_READINESS.md) for the
+checks completed before public release.

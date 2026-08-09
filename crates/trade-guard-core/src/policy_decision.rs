@@ -23,7 +23,10 @@ pub enum PolicyDecision {
 
 impl PolicyDecision {
     pub fn permits_submission(self) -> bool {
-        matches!(self, PolicyDecision::Allow | PolicyDecision::AllowWithAdjustment)
+        matches!(
+            self,
+            PolicyDecision::Allow | PolicyDecision::AllowWithAdjustment
+        )
     }
 }
 
@@ -50,11 +53,19 @@ pub struct PolicyOutcome {
 
 impl PolicyOutcome {
     pub fn allow() -> Self {
-        PolicyOutcome { decision: PolicyDecision::Allow, reason_codes: Vec::new(), warnings: Vec::new() }
+        PolicyOutcome {
+            decision: PolicyDecision::Allow,
+            reason_codes: Vec::new(),
+            warnings: Vec::new(),
+        }
     }
 
     pub fn reject(decision: PolicyDecision, reason_code: impl Into<String>) -> Self {
-        PolicyOutcome { decision, reason_codes: vec![reason_code.into()], warnings: Vec::new() }
+        PolicyOutcome {
+            decision,
+            reason_codes: vec![reason_code.into()],
+            warnings: Vec::new(),
+        }
     }
 
     pub fn is_allowed(&self) -> bool {
@@ -82,7 +93,11 @@ impl PolicyOutcome {
             reason_codes.extend(other.reason_codes);
             let mut warnings = self.warnings;
             warnings.extend(other.warnings);
-            return PolicyOutcome { decision: self.decision, reason_codes, warnings };
+            return PolicyOutcome {
+                decision: self.decision,
+                reason_codes,
+                warnings,
+            };
         }
         if !other.is_allowed() {
             let mut warnings = self.warnings;
@@ -93,7 +108,11 @@ impl PolicyOutcome {
         reason_codes.extend(other.reason_codes);
         let mut warnings = self.warnings;
         warnings.extend(other.warnings);
-        PolicyOutcome { decision: PolicyDecision::Allow, reason_codes, warnings }
+        PolicyOutcome {
+            decision: PolicyDecision::Allow,
+            reason_codes,
+            warnings,
+        }
     }
 }
 
@@ -112,10 +131,16 @@ mod tests {
     #[test]
     fn and_keeps_the_first_rejection_as_headline_decision() {
         let a = PolicyOutcome::reject(PolicyDecision::BlockedByRisk, "over-buying-power");
-        let b = PolicyOutcome::reject(PolicyDecision::BlockedBySourcePolicy, "quarantined-evidence");
+        let b = PolicyOutcome::reject(
+            PolicyDecision::BlockedBySourcePolicy,
+            "quarantined-evidence",
+        );
         let combined = a.and(b);
         assert_eq!(combined.decision, PolicyDecision::BlockedByRisk);
-        assert_eq!(combined.reason_codes, vec!["over-buying-power", "quarantined-evidence"]);
+        assert_eq!(
+            combined.reason_codes,
+            vec!["over-buying-power", "quarantined-evidence"]
+        );
     }
 
     #[test]
@@ -126,7 +151,10 @@ mod tests {
 
     #[test]
     fn and_of_allow_then_reject_is_the_rejection() {
-        let combined = PolicyOutcome::allow().and(PolicyOutcome::reject(PolicyDecision::Expired, "intent-expired"));
+        let combined = PolicyOutcome::allow().and(PolicyOutcome::reject(
+            PolicyDecision::Expired,
+            "intent-expired",
+        ));
         assert_eq!(combined.decision, PolicyDecision::Expired);
         assert!(!combined.is_allowed());
     }

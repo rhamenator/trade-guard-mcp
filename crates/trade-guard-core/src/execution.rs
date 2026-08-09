@@ -18,7 +18,7 @@ use crate::account::AccountSnapshot;
 use crate::audit::{AuditError, AuditRecord, AuditStore};
 use crate::decimal::Decimal;
 use crate::evidence::EvidenceBundle;
-use crate::jurisdiction_venue::{check_venue_profile_availability, VenueRegistry};
+use crate::jurisdiction_venue::{VenueRegistry, check_venue_profile_availability};
 use crate::order::{Fill, Order, OrderState};
 use crate::policy::{check_buying_power, check_evidence_eligibility, validate_trade_intent};
 use crate::policy_decision::{PolicyDecision, PolicyOutcome};
@@ -72,15 +72,25 @@ pub fn authorize_and_submit_paper_order(
     now: UtcTimestamp,
 ) -> Result<ExecutionResult, ExecutionError> {
     if let Some(existing) = audit.find_by_idempotency_key(&intent.idempotency_key)? {
-        return Ok(ExecutionResult { policy_outcome: existing.policy_outcome, order: existing.order, was_duplicate: true });
+        return Ok(ExecutionResult {
+            policy_outcome: existing.policy_outcome,
+            order: existing.order,
+            was_duplicate: true,
+        });
     }
 
     if intent.mode.requests_live_execution() {
-        let outcome = PolicyOutcome::reject(PolicyDecision::BlockedByOperatorControl, "live-execution-not-implemented-in-this-vertical-slice");
+        let outcome = PolicyOutcome::reject(
+            PolicyDecision::BlockedByOperatorControl,
+            "live-execution-not-implemented-in-this-vertical-slice",
+        );
         return persist_and_return(audit, &intent, outcome, None, now);
     }
     if !intent.mode.requests_paper_execution() {
-        let outcome = PolicyOutcome::reject(PolicyDecision::Reject, "mode-does-not-request-paper-execution");
+        let outcome = PolicyOutcome::reject(
+            PolicyDecision::Reject,
+            "mode-does-not-request-paper-execution",
+        );
         return persist_and_return(audit, &intent, outcome, None, now);
     }
 
@@ -127,10 +137,17 @@ pub fn authorize_and_submit_paper_order(
         Some(p) => p,
         None => {
             let quote = simulator.quote_for(&order.instrument.instrument_id);
-            if order.side.is_buy_side() { quote.ask } else { quote.bid }
+            if order.side.is_buy_side() {
+                quote.ask
+            } else {
+                quote.bid
+            }
         }
     };
-    let estimated_notional = order.quantity.checked_mul(&estimated_price).unwrap_or(Decimal::ZERO);
+    let estimated_notional = order
+        .quantity
+        .checked_mul(&estimated_price)
+        .unwrap_or(Decimal::ZERO);
 
     // Only a buy-side order consumes cash in this vertical slice's model
     // — see `AccountSnapshot::apply_fill`'s doc comment for the same
@@ -142,7 +159,10 @@ pub fn authorize_and_submit_paper_order(
             order.state = OrderState::Rejected;
             return persist_and_return(audit, &intent, risk_outcome, Some(order), now);
         }
-        account.reserved_cash = account.reserved_cash.checked_add(&estimated_notional).unwrap_or(account.reserved_cash);
+        account.reserved_cash = account
+            .reserved_cash
+            .checked_add(&estimated_notional)
+            .unwrap_or(account.reserved_cash);
     }
     order.state = OrderState::RiskReserved;
 
@@ -150,7 +170,13 @@ pub fn authorize_and_submit_paper_order(
     let fill_outcome = simulator.simulate_fill(&order);
 
     if let SimulatedFillOutcome::Filled { price } = fill_outcome {
-        let fill = Fill { fill_id: format!("fill-{order_id}"), order_id: order_id.clone(), quantity: order.quantity, price, filled_at: now };
+        let fill = Fill {
+            fill_id: format!("fill-{order_id}"),
+            order_id: order_id.clone(),
+            quantity: order.quantity,
+            price,
+            filled_at: now,
+        };
         let filled_quantity = fill.quantity;
         order.apply_fill(fill);
         account.apply_fill(&order.instrument, order.side, filled_quantity, price);
@@ -164,7 +190,10 @@ pub fn authorize_and_submit_paper_order(
     // would in `03-create-trade-guard-mcp.md`'s full design — documented
     // limitation, not a silent gap (see `providers` module doc comment).
     if order.side.is_buy_side() {
-        account.reserved_cash = account.reserved_cash.checked_sub(&estimated_notional).unwrap_or(Decimal::ZERO);
+        account.reserved_cash = account
+            .reserved_cash
+            .checked_sub(&estimated_notional)
+            .unwrap_or(Decimal::ZERO);
     }
 
     let mut outcome = PolicyOutcome::allow();
@@ -190,7 +219,11 @@ fn persist_and_return(
         order: order.clone(),
     };
     audit.append(&record)?;
-    Ok(ExecutionResult { policy_outcome: outcome, order, was_duplicate: false })
+    Ok(ExecutionResult {
+        policy_outcome: outcome,
+        order,
+        was_duplicate: false,
+    })
 }
 
 #[cfg(test)]
@@ -205,12 +238,20 @@ mod tests {
 
     fn temp_audit() -> (AuditStore, std::path::PathBuf) {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!("trade-guard-execution-test-{}-{n}.sqlite3", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "trade-guard-execution-test-{}-{n}.sqlite3",
+            std::process::id()
+        ));
         (AuditStore::new(&path).unwrap(), path)
     }
 
     fn base_account() -> AccountSnapshot {
-        AccountSnapshot::new("paper-default", "USD", Decimal::from_i64(100_000), UtcTimestamp::UNIX_EPOCH)
+        AccountSnapshot::new(
+            "paper-default",
+            "USD",
+            Decimal::from_i64(100_000),
+            UtcTimestamp::UNIX_EPOCH,
+        )
     }
 
     /// None of these tests set `instrument.venue_mic`, so an empty
@@ -261,7 +302,16 @@ mod tests {
         let mut sim = PaperSimulator::new();
         sim.set_quote("inst-1", Decimal::from_i64(100));
 
-        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), base_intent("idem-1"), None, UtcTimestamp::UNIX_EPOCH).unwrap();
+        let result = authorize_and_submit_paper_order(
+            &mut account,
+            &sim,
+            &audit,
+            &empty_venues(),
+            base_intent("idem-1"),
+            None,
+            UtcTimestamp::UNIX_EPOCH,
+        )
+        .unwrap();
 
         assert!(result.policy_outcome.is_allowed());
         assert!(!result.was_duplicate);
@@ -269,7 +319,14 @@ mod tests {
         assert_eq!(order.state, OrderState::Filled);
         assert_eq!(order.filled_quantity.to_decimal_string(), "10");
 
-        assert_eq!(account.position_for("inst-1").unwrap().quantity.to_decimal_string(), "10");
+        assert_eq!(
+            account
+                .position_for("inst-1")
+                .unwrap()
+                .quantity
+                .to_decimal_string(),
+            "10"
+        );
         assert_eq!(account.reserved_cash, Decimal::ZERO);
         let _ = std::fs::remove_file(path);
     }
@@ -283,30 +340,71 @@ mod tests {
         let mut sim = PaperSimulator::new();
         sim.set_quote("inst-1", Decimal::from_i64(100));
 
-        let first = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), base_intent("idem-dup"), None, UtcTimestamp::UNIX_EPOCH).unwrap();
+        let first = authorize_and_submit_paper_order(
+            &mut account,
+            &sim,
+            &audit,
+            &empty_venues(),
+            base_intent("idem-dup"),
+            None,
+            UtcTimestamp::UNIX_EPOCH,
+        )
+        .unwrap();
         assert!(!first.was_duplicate);
         let cash_after_first = account.cash;
         let position_after_first = account.position_for("inst-1").unwrap().quantity;
 
-        let second = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), base_intent("idem-dup"), None, UtcTimestamp::UNIX_EPOCH).unwrap();
+        let second = authorize_and_submit_paper_order(
+            &mut account,
+            &sim,
+            &audit,
+            &empty_venues(),
+            base_intent("idem-dup"),
+            None,
+            UtcTimestamp::UNIX_EPOCH,
+        )
+        .unwrap();
         assert!(second.was_duplicate);
-        assert_eq!(second.order.unwrap().order_id, first.order.unwrap().order_id);
+        assert_eq!(
+            second.order.unwrap().order_id,
+            first.order.unwrap().order_id
+        );
         // The account was never touched a second time — cash/position
         // reflect exactly one fill, not two.
         assert_eq!(account.cash, cash_after_first);
-        assert_eq!(account.position_for("inst-1").unwrap().quantity, position_after_first);
+        assert_eq!(
+            account.position_for("inst-1").unwrap().quantity,
+            position_after_first
+        );
         let _ = std::fs::remove_file(path);
     }
 
     #[test]
     fn insufficient_buying_power_rejects_without_touching_the_position() {
         let (audit, path) = temp_audit();
-        let mut account = AccountSnapshot::new("paper-default", "USD", Decimal::from_i64(10), UtcTimestamp::UNIX_EPOCH);
+        let mut account = AccountSnapshot::new(
+            "paper-default",
+            "USD",
+            Decimal::from_i64(10),
+            UtcTimestamp::UNIX_EPOCH,
+        );
         let mut sim = PaperSimulator::new();
         sim.set_quote("inst-1", Decimal::from_i64(100));
 
-        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), base_intent("idem-poor"), None, UtcTimestamp::UNIX_EPOCH).unwrap();
-        assert_eq!(result.policy_outcome.decision, PolicyDecision::BlockedByRisk);
+        let result = authorize_and_submit_paper_order(
+            &mut account,
+            &sim,
+            &audit,
+            &empty_venues(),
+            base_intent("idem-poor"),
+            None,
+            UtcTimestamp::UNIX_EPOCH,
+        )
+        .unwrap();
+        assert_eq!(
+            result.policy_outcome.decision,
+            PolicyDecision::BlockedByRisk
+        );
         assert!(account.position_for("inst-1").is_none());
         assert_eq!(account.cash.to_decimal_string(), "10");
         let _ = std::fs::remove_file(path);
@@ -320,8 +418,20 @@ mod tests {
         let mut intent = base_intent("idem-live");
         intent.mode = IntentMode::GuardedLive;
 
-        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), intent, None, UtcTimestamp::UNIX_EPOCH).unwrap();
-        assert_eq!(result.policy_outcome.decision, PolicyDecision::BlockedByOperatorControl);
+        let result = authorize_and_submit_paper_order(
+            &mut account,
+            &sim,
+            &audit,
+            &empty_venues(),
+            intent,
+            None,
+            UtcTimestamp::UNIX_EPOCH,
+        )
+        .unwrap();
+        assert_eq!(
+            result.policy_outcome.decision,
+            PolicyDecision::BlockedByOperatorControl
+        );
         assert!(result.order.is_none());
         assert!(account.position_for("inst-1").is_none());
         let _ = std::fs::remove_file(path);
@@ -335,7 +445,16 @@ mod tests {
         let mut intent = base_intent("idem-observe");
         intent.mode = IntentMode::Observe;
 
-        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), intent, None, UtcTimestamp::UNIX_EPOCH).unwrap();
+        let result = authorize_and_submit_paper_order(
+            &mut account,
+            &sim,
+            &audit,
+            &empty_venues(),
+            intent,
+            None,
+            UtcTimestamp::UNIX_EPOCH,
+        )
+        .unwrap();
         assert_eq!(result.policy_outcome.decision, PolicyDecision::Reject);
         let _ = std::fs::remove_file(path);
     }
@@ -348,7 +467,16 @@ mod tests {
         let mut intent = base_intent("idem-wrong-acct");
         intent.account_alias = "some-other-account".into();
 
-        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), intent, None, UtcTimestamp::UNIX_EPOCH).unwrap();
+        let result = authorize_and_submit_paper_order(
+            &mut account,
+            &sim,
+            &audit,
+            &empty_venues(),
+            intent,
+            None,
+            UtcTimestamp::UNIX_EPOCH,
+        )
+        .unwrap();
         assert_eq!(result.policy_outcome.decision, PolicyDecision::Reject);
         let _ = std::fs::remove_file(path);
     }
@@ -363,7 +491,16 @@ mod tests {
         intent.order_type = OrderType::Limit;
         intent.limit_price = Some(Decimal::from_i64(50));
 
-        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), intent, None, UtcTimestamp::UNIX_EPOCH).unwrap();
+        let result = authorize_and_submit_paper_order(
+            &mut account,
+            &sim,
+            &audit,
+            &empty_venues(),
+            intent,
+            None,
+            UtcTimestamp::UNIX_EPOCH,
+        )
+        .unwrap();
         assert!(result.policy_outcome.is_allowed());
         let order = result.order.unwrap();
         assert_eq!(order.state, OrderState::Acknowledged);
@@ -383,11 +520,29 @@ mod tests {
         let mut intent = base_intent("idem-bad-qty");
         intent.quantity = Decimal::ZERO;
 
-        let first = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), intent.clone(), None, UtcTimestamp::UNIX_EPOCH).unwrap();
+        let first = authorize_and_submit_paper_order(
+            &mut account,
+            &sim,
+            &audit,
+            &empty_venues(),
+            intent.clone(),
+            None,
+            UtcTimestamp::UNIX_EPOCH,
+        )
+        .unwrap();
         assert_eq!(first.policy_outcome.decision, PolicyDecision::Reject);
         assert!(!first.was_duplicate);
 
-        let second = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), intent, None, UtcTimestamp::UNIX_EPOCH).unwrap();
+        let second = authorize_and_submit_paper_order(
+            &mut account,
+            &sim,
+            &audit,
+            &empty_venues(),
+            intent,
+            None,
+            UtcTimestamp::UNIX_EPOCH,
+        )
+        .unwrap();
         assert!(second.was_duplicate);
         assert_eq!(second.policy_outcome.decision, PolicyDecision::Reject);
         let _ = std::fs::remove_file(path);
@@ -402,9 +557,21 @@ mod tests {
         let mut intent = base_intent("idem-venue");
         intent.instrument.venue_mic = Some("NOPE".to_string());
 
-        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, &empty_venues(), intent, None, UtcTimestamp::UNIX_EPOCH).unwrap();
+        let result = authorize_and_submit_paper_order(
+            &mut account,
+            &sim,
+            &audit,
+            &empty_venues(),
+            intent,
+            None,
+            UtcTimestamp::UNIX_EPOCH,
+        )
+        .unwrap();
 
-        assert!(result.policy_outcome.is_allowed(), "an unregistered venue must warn, never block a paper order");
+        assert!(
+            result.policy_outcome.is_allowed(),
+            "an unregistered venue must warn, never block a paper order"
+        );
         assert_eq!(result.order.unwrap().state, OrderState::Filled);
         assert_eq!(result.policy_outcome.warnings.len(), 1);
         assert!(result.policy_outcome.warnings[0].contains("NOPE"));
@@ -427,7 +594,16 @@ mod tests {
         // test right below this one already covers on purpose.
         let now = UtcTimestamp::parse_rfc3339("2026-07-20T00:00:00Z").unwrap();
 
-        let result = authorize_and_submit_paper_order(&mut account, &sim, &audit, &venues, intent, None, now).unwrap();
+        let result = authorize_and_submit_paper_order(
+            &mut account,
+            &sim,
+            &audit,
+            &venues,
+            intent,
+            None,
+            now,
+        )
+        .unwrap();
 
         assert!(result.policy_outcome.is_allowed());
         assert!(result.policy_outcome.warnings.is_empty());

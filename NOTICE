@@ -6,9 +6,9 @@ This repository is licensed under the GNU General Public License, version 3
 
 Research and safety intent notice:
 
-- No implementation exists yet in this repository. See README.md "Status".
-- This service is intended to become the sole holder of narrowly-scoped
-  execution credentials in the three-repository system, only when live
-  mode is explicitly armed by an operator. It is not investment, legal,
-  accounting, or tax advice, and any live-trading capability added here is
-  the sole responsibility of the deploying operator.
+- The current implementation is paper-only. It contains a deterministic paper
+  simulator, policy gates, reconciliation logic, and a tamper-evident audit
+  trail. It has no live-order path or broker adapter.
+- This service is not investment, legal, accounting, or tax advice. Any future
+  live-trading capability must undergo a separate security, legal, and
+  operational review before it is enabled or released.
