@@ -4,9 +4,21 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Trade Guard MCP policy and audit server"
 
 [dependencies]
 trade_guard_core = { path = "../../crates/trade-guard-core" }
 
 [lints]
 workspace = true
+
+[package.metadata.dist]
+dist = true
+
+[package.metadata.wix]
+upgrade-guid = "8582C22A-2A2B-4D73-A3E9-4563CDB05C9E"
+path-guid = "84E5F74A-4245-42EB-90F1-B78207A95759"
+license = false
+eula = false

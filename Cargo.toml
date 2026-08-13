@@ -10,6 +10,8 @@ version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 publish = false
+authors = ["Richard M. Hamilton"]
+repository = "https://github.com/rhamenator/trade-guard-mcp"
 
 [workspace.dependencies]
 # Following market-intelligence-mcp's precedent: `serde`/`serde_json` are
@@ -36,3 +38,8 @@ unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 all = "warn"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
