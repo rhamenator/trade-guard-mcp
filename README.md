@@ -1,3 +1,7 @@
+<p align="center">
+  <img src=".github/assets/logo.png" alt="Trade Guard MCP logo" width="220">
+</p>
+
 # trade-guard-mcp
 
 Authoritative account state, deterministic pre-trade risk policy, idempotent
